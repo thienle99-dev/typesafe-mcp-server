@@ -290,6 +290,22 @@ HTTP/SSE endpoints:
 - `GET /sse`: mở MCP SSE session.
 - `POST /messages?sessionId=...`: gửi MCP messages cho session.
 
+Codex local integration dùng stdio. Chạy thủ công bằng:
+
+```bash
+MCP_TRANSPORT=stdio npm start
+```
+
+Đăng ký vào Codex CLI:
+
+```bash
+codex mcp add typesafe-code \\
+  --env MCP_TRANSPORT=stdio \\
+  -- node --env-file=/root/documents/mcp/typesafe-mcp-server/.env /root/documents/mcp/typesafe-mcp-server/dist/src/server.js
+```
+
+Codex sẽ khởi động process này tự động. Process cần nhìn thấy `TYPESAFE_API_KEY` trong environment của Codex; không ghi API key trực tiếp vào `config.toml` hoặc command line.
+
 ## Development
 
 ```bash

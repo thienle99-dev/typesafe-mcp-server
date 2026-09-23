@@ -1,6 +1,7 @@
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { createDecisionHandlers } from "./decisions.js";
 import { loadJevConfig, JevHttpProvider } from "./jev.js";
@@ -68,4 +69,10 @@ app.post("/messages", async (req, res) => {
 });
 
 const port = Number(process.env.PORT ?? "3000");
-app.listen(port, () => console.log(`typesafe-mcp-server listening on port ${port}`));
+
+if (process.env.MCP_TRANSPORT === "stdio") {
+  const transport = new StdioServerTransport();
+  await createMcpServer().connect(transport);
+} else {
+  app.listen(port, () => console.log(`typesafe-mcp-server listening on port ${port}`));
+}
