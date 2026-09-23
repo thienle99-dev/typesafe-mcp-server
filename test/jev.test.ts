@@ -3,9 +3,7 @@ import { JevHttpProvider } from "../src/jev.js";
 
 describe("JevHttpProvider", () => {
   it("maps a valid decision response", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
         model: "jev-1.13.0",
         answers: {
           decision: {
@@ -15,12 +13,11 @@ describe("JevHttpProvider", () => {
             probabilities: { pass: 0.99, review: 0.01, block: 0 },
           },
         },
-      }),
-    });
+      })));
     vi.stubGlobal("fetch", fetchMock);
 
     const provider = new JevHttpProvider({
-      apiUrl: "https://jev.test/decide",
+      baseUrl: "https://jev.test",
       apiKey: "test-key",
       model: "jev",
       timeoutMs: 1000,
@@ -31,27 +28,26 @@ describe("JevHttpProvider", () => {
       confidence: 0.99,
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://jev.test/decide",
+      "https://jev.test/v1/systemone",
       expect.objectContaining({
-        headers: expect.objectContaining({ authorization: "Bearer test-key" }),
+        headers: expect.objectContaining({ Authorization: "Bearer test-key" }),
         body: expect.stringContaining('"questions"'),
       }),
     );
   });
 
   it("rejects malformed decisions", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ model: "jev-1.13.0", answers: "invalid" }),
-    }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ model: "jev-1.13.0", answers: "invalid" })),
+    ));
 
     const provider = new JevHttpProvider({
-      apiUrl: "https://jev.test/decide",
+      baseUrl: "https://jev.test",
       apiKey: "test-key",
       model: "jev",
       timeoutMs: 1000,
       maxRetries: 0,
     });
-    await expect(provider.decide({ tool: "merge_gate", payload: {} })).rejects.toThrow("answers shape");
+    await expect(provider.decide({ tool: "merge_gate", payload: {} })).rejects.toThrow("missing the decision");
   });
 });

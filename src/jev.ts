@@ -1,23 +1,19 @@
+import { choice, noul, TypeSafeClient } from "@typesafe-ai/sdk";
 import type { DecisionEnvelope, DecisionProvider, DecisionTool } from "./types.js";
 
-type Question =
-  | { type: "choice"; instructions: string; criteria: Record<string, string> }
-  | { type: "score"; instructions: string; criteria: string[] }
-  | { type: "noul"; instructions: string };
+type Question = ReturnType<typeof choice> | ReturnType<typeof noul>;
 
-interface TypeSafeResponse {
-  model: string;
-  answers: Record<string, TypeSafeAnswer>;
-  usage?: { input_tokens?: number; output_tokens?: number };
+interface TypeSafeAnswer {
+  type: "choice" | "score" | "noul";
+  choice?: string;
+  score?: number;
+  noul?: number;
+  confidence?: number;
+  probabilities?: Record<string, number>;
 }
 
-type TypeSafeAnswer =
-  | { type: "choice"; choice: string; probabilities: Record<string, number>; confidence: number }
-  | { type: "score"; score: number; probabilities: Record<string, number>; confidence: number }
-  | { type: "noul"; noul: number };
-
 export interface JevConfig {
-  apiUrl: string;
+  baseUrl: string;
   apiKey: string;
   model: string;
   timeoutMs: number;
@@ -39,7 +35,7 @@ export function loadJevConfig(env: NodeJS.ProcessEnv = process.env): JevConfig {
   }
 
   return {
-    apiUrl: env.TYPESAFE_API_URL ?? env.JEV_API_URL ?? "https://api.typesafe.ai/v1/systemone",
+    baseUrl: normalizeBaseUrl(env.TYPESAFE_API_URL ?? env.JEV_API_URL ?? "https://api.typesafe.ai"),
     apiKey,
     model: env.TYPESAFE_MODEL ?? env.JEV_MODEL ?? "jev-latest",
     timeoutMs,
@@ -48,51 +44,32 @@ export function loadJevConfig(env: NodeJS.ProcessEnv = process.env): JevConfig {
 }
 
 export class JevHttpProvider implements DecisionProvider {
-  public constructor(private readonly config: JevConfig) {}
+  private readonly client: TypeSafeClient;
+
+  public constructor(config: JevConfig) {
+    this.client = new TypeSafeClient({
+      apiKey: config.apiKey,
+      baseURL: config.baseUrl,
+      defaultModel: config.model,
+      timeout: config.timeoutMs,
+      retry: { maxRetries: config.maxRetries },
+    });
+  }
 
   public async decide<T extends DecisionEnvelope>(input: {
     tool: DecisionTool;
     payload: unknown;
   }): Promise<T> {
-    const response = await this.request(toTypeSafeRequest(input.tool, input.payload, this.config.model));
+    const request = toTypeSafeRequest(input.tool, input.payload, this.client.defaultModel);
+    const response = await this.client.systemOne(request as any) as unknown as {
+      answers: Record<string, TypeSafeAnswer>;
+    };
     return fromTypeSafeResponse(input.tool, response) as T;
   }
+}
 
-  private async request(body: { state: unknown; model: string; questions: Record<string, Question> }) {
-    for (let attempt = 0; ; attempt += 1) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
-
-      try {
-        const response = await fetch(this.config.apiUrl, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${this.config.apiKey}`,
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
-
-        if ((response.status === 429 || response.status === 529) && attempt < this.config.maxRetries) {
-          await delay(250 * 2 ** attempt);
-          continue;
-        }
-
-        if (!response.ok) throw new Error(`TypeSafe returned HTTP ${response.status}`);
-        const json: unknown = await response.json();
-        if (!isTypeSafeResponse(json)) throw new Error("TypeSafe response has an invalid answers shape");
-        return json;
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") {
-          throw new Error(`TypeSafe request timed out after ${this.config.timeoutMs}ms`);
-        }
-        throw error;
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-  }
+function normalizeBaseUrl(value: string): string {
+  return value.replace(/\/v1\/systemone\/?$/, "").replace(/\/$/, "");
 }
 
 function toTypeSafeRequest(tool: DecisionTool, payload: unknown, model: string) {
@@ -103,11 +80,8 @@ function toTypeSafeRequest(tool: DecisionTool, payload: unknown, model: string) 
       state,
       model,
       questions: Object.fromEntries(
-        groups.map((group) => [group, {
-          type: "noul",
-          instructions: `Should the ${group} test group run for these changes?`,
-        } satisfies Question]),
-      ),
+        groups.map((group) => [group, noul(`Should the ${group} test group run for these changes?`)]),
+      ) as Record<string, Question>,
     };
   }
 
@@ -172,10 +146,6 @@ function questionFor(tool: DecisionTool): Question {
   }
 }
 
-function choice(instructions: string, criteria: Record<string, string>): Question {
-  return { type: "choice", instructions, criteria };
-}
-
 function getTestGroups(state: Record<string, unknown>): string[] {
   const available = state.availableTests;
   if (Array.isArray(available) && available.every((item) => typeof item === "string") && available.length > 0) {
@@ -184,17 +154,12 @@ function getTestGroups(state: Record<string, unknown>): string[] {
   return ["unit", "integration", "e2e", "lint", "security"];
 }
 
-function fromTypeSafeResponse(tool: DecisionTool, response: TypeSafeResponse): DecisionEnvelope {
+function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<string, TypeSafeAnswer> }): DecisionEnvelope {
   if (tool === "select_tests") {
     const noulAnswers = Object.entries(response.answers)
-      .filter((entry): entry is [string, { type: "noul"; noul: number }] => entry[1].type === "noul");
-    const selected = noulAnswers
-      .filter(([, answer]) => answer.noul >= 0.5)
-      .map(([group]) => group);
-    const probabilities = Object.fromEntries(
-      noulAnswers
-        .map(([group, answer]) => [group, answer.noul]),
-    );
+      .filter((entry): entry is [string, TypeSafeAnswer & { type: "noul"; noul: number }] => entry[1].type === "noul" && typeof entry[1].noul === "number");
+    const selected = noulAnswers.filter(([, answer]) => answer.noul >= 0.5).map(([group]) => group);
+    const probabilities = Object.fromEntries(noulAnswers.map(([group, answer]) => [group, answer.noul]));
     return {
       testGroups: selected,
       testPatterns: selected,
@@ -208,7 +173,7 @@ function fromTypeSafeResponse(tool: DecisionTool, response: TypeSafeResponse): D
   const answer = response.answers.decision;
   if (!answer) throw new Error("TypeSafe response is missing the decision answer");
 
-  if (answer.type === "choice") {
+  if (answer.type === "choice" && answer.choice && answer.probabilities && typeof answer.confidence === "number") {
     return {
       value: answer.choice,
       confidence: answer.confidence,
@@ -218,7 +183,7 @@ function fromTypeSafeResponse(tool: DecisionTool, response: TypeSafeResponse): D
     };
   }
 
-  if (answer.type === "score") {
+  if (answer.type === "score" && typeof answer.score === "number" && answer.probabilities && typeof answer.confidence === "number") {
     return {
       value: answer.score,
       confidence: answer.confidence,
@@ -227,12 +192,16 @@ function fromTypeSafeResponse(tool: DecisionTool, response: TypeSafeResponse): D
     };
   }
 
-  return {
-    value: answer.noul,
-    confidence: answer.noul,
-    probabilities: { "0": 1 - answer.noul, "1": answer.noul },
-    reasons: ["Jev returned a noul probability."],
-  };
+  if (answer.type === "noul" && typeof answer.noul === "number") {
+    return {
+      value: answer.noul,
+      confidence: answer.noul,
+      probabilities: { "0": 1 - answer.noul, "1": answer.noul },
+      reasons: ["Jev returned a noul probability."],
+    };
+  }
+
+  throw new Error("TypeSafe response contains an invalid answer");
 }
 
 function fieldFor(tool: DecisionTool, value: string): Record<string, unknown> {
@@ -250,17 +219,7 @@ function fieldFor(tool: DecisionTool, value: string): Record<string, unknown> {
 
 function confidenceFor(answers: Record<string, TypeSafeAnswer>): number {
   const values = Object.values(answers).map((answer) => answer.type === "noul"
-    ? Math.max(answer.noul, 1 - answer.noul)
-    : answer.confidence);
+    ? Math.max(answer.noul ?? 0, 1 - (answer.noul ?? 0))
+    : answer.confidence ?? 0);
   return values.length === 0 ? 0 : Math.min(...values);
-}
-
-function isTypeSafeResponse(value: unknown): value is TypeSafeResponse {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { answers?: unknown };
-  return typeof candidate.answers === "object" && candidate.answers !== null;
-}
-
-function delay(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
