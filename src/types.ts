@@ -9,6 +9,7 @@ export type DecisionTool =
 
 export interface DecisionEnvelope {
   confidence: number;
+  probabilities?: Record<string, number>;
   reasons?: string[];
   needsHumanReview?: boolean;
   [key: string]: unknown;
