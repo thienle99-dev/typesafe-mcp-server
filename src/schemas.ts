@@ -44,7 +44,14 @@ export const dependencyActionInput = z.object({
   changedFiles: z.array(z.string()).optional(),
 });
 
+const checkStatus = z.enum(["pass", "fail", "not_run"]);
+
 export const mergeGateInput = z.object({
+  checks: z.object({
+    tests: checkStatus.optional(),
+    lint: checkStatus.optional(),
+    security: checkStatus.optional(),
+  }).optional(),
   changeClassification: z.record(z.unknown()).optional(),
   riskReview: z.record(z.unknown()).optional(),
   routeDecision: z.record(z.unknown()).optional(),

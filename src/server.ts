@@ -2,12 +2,14 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { createDecisionHandlers } from "./decisions.js";
 import { loadJevConfig, JevHttpProvider } from "./jev.js";
 import { loadPolicy } from "./policy.js";
 import {
   classifyChangeInput,
+  decisionOutput,
   dependencyActionInput,
   mergeGateInput,
   reviewRiskInput,
@@ -24,27 +26,48 @@ const transports = new Map<string, SSEServerTransport>();
 function createMcpServer() {
   const server = new McpServer({ name: "typesafe-mcp-server", version: "0.1.0" });
 
-  register(server, "classify_change", "Classify a code change", classifyChangeInput, handlers.classify_change);
-  register(server, "route_task", "Route a coding task to a subsystem", routeTaskInput, handlers.route_task);
-  register(server, "review_risk", "Review diff risk", reviewRiskInput, handlers.review_risk);
-  register(server, "select_tests", "Select tests for changed code", selectTestsInput, handlers.select_tests);
-  register(server, "triage_error", "Triage a compiler or test error", triageErrorInput, handlers.triage_error);
-  register(server, "dependency_action", "Decide how to handle a dependency request", dependencyActionInput, handlers.dependency_action);
-  register(server, "merge_gate", "Evaluate a merge gate", mergeGateInput, handlers.merge_gate);
+  register(server, "classify_change", "Classify a code diff as safe_refactor, behavior_change, security_sensitive, migration or unknown. Call before review or merge. Result is in `changeType`.", classifyChangeInput, handlers.classify_change);
+  register(server, "route_task", "Route a coding task or issue to the owning subsystem (frontend, backend, infra, data, docs, unknown). Call before starting work. Result is in `subsystem`.", routeTaskInput, handlers.route_task);
+  register(server, "review_risk", "Rate the risk of a diff as low, medium, high or critical using changed files and existing test/security results. Result is in `riskLevel`.", reviewRiskInput, handlers.review_risk);
+  register(server, "select_tests", "Select which test groups to run for changed files. Result is `testGroups` plus per-group `probabilities` and a `priority` of fast, normal or full.", selectTestsInput, handlers.select_tests);
+  register(server, "triage_error", "Classify the likely root-cause category of a compiler, test or runtime error (type_error, dependency, flaky_test, config, logic_bug, environment, unknown). Result is in `category`; the agent still investigates and fixes.", triageErrorInput, handlers.triage_error);
+  register(server, "dependency_action", "Decide whether a dependency request should be allowed, pinned, rejected or sent to manual review. Call before running a package manager. Result is in `action`; nothing is installed.", dependencyActionInput, handlers.dependency_action);
+  register(server, "merge_gate", "Aggregate prior decisions and check results into pass, review or block. Result is in `decision`; it does not merge or override branch protection.", mergeGateInput, handlers.merge_gate);
 
   return server;
 }
 
-function register<T extends z.ZodRawShape>(
+function register(
   server: McpServer,
   name: string,
   description: string,
-  schema: z.ZodObject<T>,
-  handler: (input: z.infer<z.ZodObject<T>>) => Promise<unknown>,
+  schema: z.AnyZodObject,
+  handler: (input: unknown) => Promise<unknown>,
 ) {
-  server.tool(name, description, schema.shape as any, async (input: any) => ({
-    content: [{ type: "text" as const, text: JSON.stringify(await handler(input)) }],
-  }));
+  server.registerTool(
+    name,
+    {
+      description,
+      inputSchema: schema.shape,
+      outputSchema: decisionOutput,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async (input: Record<string, unknown>): Promise<CallToolResult> => {
+      try {
+        const result = (await handler(input)) as z.infer<typeof decisionOutput>;
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
+      } catch (error) {
+        return { isError: true, content: [{ type: "text" as const, text: `${name} failed: ${errorMessage(error)}` }] };
+      }
+    },
+  );
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof z.ZodError) {
+    return error.issues.map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`).join("; ");
+  }
+  return error instanceof Error ? error.message : String(error);
 }
 
 const app = express();

@@ -88,7 +88,7 @@ function toTypeSafeRequest(tool: DecisionTool, payload: unknown, model: string) 
   return { state, model, questions: { decision: questionFor(tool) } };
 }
 
-function questionFor(tool: DecisionTool): Question {
+function questionFor(tool: Exclude<DecisionTool, "select_tests">): Question {
   switch (tool) {
     case "classify_change":
       return choice("Classify this code change", {
@@ -137,12 +137,6 @@ function questionFor(tool: DecisionTool): Question {
         review: "A human should review before merge",
         block: "Merge must be blocked until blockers are resolved",
       });
-    case "select_tests":
-      return choice("Which test group is the highest priority?", {
-        fast: "Fast unit and focused checks",
-        normal: "Relevant unit and integration checks",
-        full: "Full repository test suite",
-      });
   }
 }
 
@@ -166,6 +160,7 @@ function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<st
       priority: selected.length > 2 ? "full" : selected.length > 0 ? "normal" : "fast",
       confidence: confidenceFor(response.answers),
       probabilities,
+      uncertainGroups: noulAnswers.filter(([, answer]) => answer.noul > 0.3 && answer.noul < 0.7).map(([group]) => group),
       reasons: [`Selected ${selected.length} test group(s) using Jev noul probabilities.`],
     };
   }
