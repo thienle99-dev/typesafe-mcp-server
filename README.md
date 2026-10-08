@@ -71,7 +71,7 @@ Agent nên coi đây là "không có decision", không phải `pass`.
 
 ### 1. `classify_change`
 
-Phân loại một diff để agent biết thay đổi có phải refactor an toàn, behavior change hay cần review đặc biệt.
+Gắn nhãn bản chất của thay đổi trong diff: refactor an toàn, đổi behavior, security-sensitive hoặc migration. Dùng tool này để biết thay đổi thuộc loại nào.
 
 Input:
 
@@ -144,7 +144,7 @@ Output:
 
 ### 3. `review_risk`
 
-Đánh giá risk của diff dựa trên thay đổi, file bị ảnh hưởng và kết quả kiểm tra đã có.
+Ước lượng mức độ nghiêm trọng và blast radius của thay đổi dựa trên diff, file bị ảnh hưởng và trạng thái kiểm tra. Dùng tool này để đánh giá khả năng và mức ảnh hưởng của sự cố.
 
 Input:
 
@@ -349,7 +349,7 @@ Các command còn lại do model quyết định. `command_safety` chỉ trả l
 
 ### 9. `check_breaking_change`
 
-Xác định diff có làm hỏng tương thích ngược cho người dùng public API, schema, CLI hoặc exported type hay không.
+Kiểm tra riêng khả năng tương thích ngược cho consumer của public API, schema, CLI hoặc exported type. Dùng tool này khi câu hỏi là consumer hiện tại có tiếp tục hoạt động sau thay đổi không.
 
 Input:
 
