@@ -160,4 +160,65 @@ describe("JevHttpProvider", () => {
     });
     await expect(provider.decide({ tool: "select_tests", payload: { changedFiles: ["a.ts"] } })).rejects.toThrow("missing the test group");
   });
+
+  describe("classify_change labels", () => {
+    const config = { baseUrl: "https://jev.test", apiKey: "test-key", model: "jev", timeoutMs: 1000, maxRetries: 0 };
+    const decision = {
+      type: "choice",
+      choice: "behavior_change",
+      confidence: 0.95,
+      probabilities: { safe_refactor: 0.01, behavior_change: 0.9, security_sensitive: 0.05, migration: 0.02, unknown: 0.02 },
+    };
+
+    it("asks one noul question per label next to the choice", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ model: "jev-1.13.0", answers: { decision } })));
+      vi.stubGlobal("fetch", fetchMock);
+      await new JevHttpProvider(config).decide({ tool: "classify_change", payload: {} });
+      const body = String(fetchMock.mock.calls[0][1].body);
+      for (const key of ["decision", "label_behavior_change", "label_security_sensitive", "label_migration"]) {
+        expect(body).toContain(`"${key}"`);
+      }
+    });
+
+    it("returns every label above the threshold and keeps changeType", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        model: "jev-1.13.0",
+        answers: {
+          decision,
+          label_behavior_change: { type: "noul", noul: 0.92 },
+          label_security_sensitive: { type: "noul", noul: 0.41 },
+          label_migration: { type: "noul", noul: 0.04 },
+        },
+      }))));
+      const result = await new JevHttpProvider(config).decide({ tool: "classify_change", payload: {} });
+      expect(result).toMatchObject({
+        changeType: "behavior_change",
+        confidence: 0.95,
+        labels: ["behavior_change", "security_sensitive"],
+        labelProbabilities: { behavior_change: 0.92, security_sensitive: 0.41, migration: 0.04 },
+      });
+      expect(result.reasons).toContain("Also flagged: security_sensitive (41%).");
+    });
+
+    it("still works when label answers are missing", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ model: "jev-1.13.0", answers: { decision } }))));
+      const result = await new JevHttpProvider(config).decide({ tool: "classify_change", payload: {} });
+      expect(result).toMatchObject({ changeType: "behavior_change" });
+      expect(result).not.toHaveProperty("labels");
+    });
+
+    it("uses a higher threshold for behavior_change than for security and migration", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        model: "jev-1.13.0",
+        answers: {
+          decision: { ...decision, choice: "migration" },
+          label_behavior_change: { type: "noul", noul: 0.49 },
+          label_security_sensitive: { type: "noul", noul: 0.29 },
+          label_migration: { type: "noul", noul: 0.3 },
+        },
+      }))));
+      const result = await new JevHttpProvider(config).decide({ tool: "classify_change", payload: {} });
+      expect(result).toMatchObject({ labels: ["migration"] });
+    });
+  });
 });

@@ -14,6 +14,13 @@ const CHANGE_LABEL_QUESTIONS = {
   migration: "Does this change schema, data, or migration behavior?",
 } as const;
 const LABEL_PREFIX = "label_";
+// Missing a security or migration flag costs more than a spurious one, while
+// behavior_change is flagged often enough that a low threshold would only add noise.
+const LABEL_THRESHOLDS: Record<keyof typeof CHANGE_LABEL_QUESTIONS, number> = {
+  behavior_change: 0.5,
+  security_sensitive: 0.3,
+  migration: 0.3,
+};
 
 type Question = ReturnType<typeof choice> | ReturnType<typeof noul>;
 
@@ -262,13 +269,14 @@ function describeChoice(choice: string, probabilities: Record<string, number>) {
 }
 
 function describeLabels(primary: string, answers: Record<string, TypeSafeAnswer>) {
-  const entries = Object.keys(CHANGE_LABEL_QUESTIONS).flatMap((label) => {
+  const entries = (Object.keys(CHANGE_LABEL_QUESTIONS) as Array<keyof typeof CHANGE_LABEL_QUESTIONS>).flatMap((label) => {
     const answer = answers[`${LABEL_PREFIX}${label}`];
     return answer?.type === "noul" && typeof answer.noul === "number" ? [[label, answer.noul] as const] : [];
   });
   if (entries.length === 0) return {} as { labels?: string[]; labelProbabilities?: Record<string, number>; reasons?: string[] };
-  const labels = entries.filter(([, probability]) => probability >= SELECT_THRESHOLD).map(([label]) => label);
-  const extra = entries.filter(([label, probability]) => label !== primary && probability >= SELECT_THRESHOLD);
+  const flagged = entries.filter(([label, probability]) => probability >= LABEL_THRESHOLDS[label]);
+  const labels = flagged.map(([label]) => label);
+  const extra = flagged.filter(([label]) => label !== primary);
   return {
     labels,
     labelProbabilities: Object.fromEntries(entries),

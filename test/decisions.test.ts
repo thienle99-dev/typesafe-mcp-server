@@ -117,3 +117,29 @@ describe("command_safety hard rules", () => {
     expect(decide).not.toHaveBeenCalled();
   });
 });
+
+describe("classify_change security review", () => {
+  it("requires human review when security_sensitive is a label, even with high confidence", async () => {
+    const { provider } = providerReturning({
+      confidence: 0.99,
+      changeType: "behavior_change",
+      labels: ["behavior_change", "security_sensitive"],
+      reasons: ["Selected 'behavior_change' (95%)."],
+    });
+    const result = await createDecisionHandlers(provider, policy).classify_change({ diff: "d", changedFiles: ["a.ts"] });
+    expect(result).toMatchObject({ needsHumanReview: true });
+    expect(result.reasons).toContain("Flagged security_sensitive; human review required regardless of the primary label.");
+  });
+
+  it("does not force review without a security label", async () => {
+    const { provider } = providerReturning({ confidence: 0.99, changeType: "migration", labels: ["migration"] });
+    const result = await createDecisionHandlers(provider, policy).classify_change({ diff: "d", changedFiles: ["a.ts"] });
+    expect(result).toMatchObject({ needsHumanReview: false });
+  });
+
+  it("still works when the provider returns no labels", async () => {
+    const { provider } = providerReturning({ confidence: 0.99, changeType: "safe_refactor" });
+    const result = await createDecisionHandlers(provider, policy).classify_change({ diff: "d", changedFiles: ["a.ts"] });
+    expect(result).toMatchObject({ needsHumanReview: false });
+  });
+});

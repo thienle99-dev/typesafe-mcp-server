@@ -93,6 +93,22 @@ Decision chính nằm ở `changeType`:
 - `migration`: thay đổi schema, data hoặc migration.
 - `unknown`: không đủ evidence.
 
+Một change có thể thuộc nhiều loại cùng lúc, nên ngoài `changeType` (nhãn chính, chọn một) tool còn trả đa nhãn:
+
+```json
+{
+  "changeType": "security_sensitive",
+  "labels": ["behavior_change", "security_sensitive"],
+  "labelProbabilities": { "behavior_change": 0.98, "security_sensitive": 0.96, "migration": 0.18 }
+}
+```
+
+- `labels`: các loại có xác suất `>= 0.3` trong `behavior_change`, `security_sensitive`, `migration`. Ngưỡng thấp có chủ ý vì bỏ sót cờ bảo mật hoặc migration tốn kém hơn gắn thừa. Danh sách rỗng nghĩa là không có cờ nào (thường đi với `safe_refactor`).
+- `labelProbabilities`: xác suất của từng label (mỗi label là một câu hỏi `noul` riêng, gửi cùng request với câu hỏi `choice`).
+- Khi có label ngoài `changeType`, `reasons` có thêm dòng `Also flagged: ...`.
+- Agent nên đọc `labels` chứ không chỉ `changeType`: nhãn chính có thể là `behavior_change` trong khi `labels` vẫn chứa `security_sensitive`. `confidence` vẫn là của nhãn chính, không tính các label.
+- Nếu API không trả các câu trả lời label, `labels` và `labelProbabilities` bị bỏ qua và `changeType` vẫn hoạt động như trước.
+
 ### 2. `route_task`
 
 Xác định subsystem phù hợp để xử lý issue hoặc coding task.
@@ -354,7 +370,8 @@ Decision chính nằm ở `scope`:
 
 MCP adapter sử dụng TypeSafe JavaScript SDK:
 
-- `classify_change`, `route_task`, `review_risk`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`, `assess_task_scope`: một câu hỏi `choice`.
+- `route_task`, `review_risk`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`, `assess_task_scope`: một câu hỏi `choice`.
+- `classify_change`: một câu hỏi `choice` cho `changeType` và một `noul` cho mỗi label (`behavior_change`, `security_sensitive`, `migration`), gửi trong cùng một request.
 - `select_tests`: một `noul` cho mỗi test group.
 - SDK chịu trách nhiệm authentication, request tới `/v1/systemone`, timeout và retry.
 

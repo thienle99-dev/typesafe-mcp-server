@@ -19,7 +19,7 @@ import type { z } from "zod";
 
 export function createDecisionHandlers(provider: DecisionProvider, policy: PolicyConfig) {
   return {
-    classify_change: (input: unknown) => run("classify_change", classifyChangeInput.parse(input), provider, policy),
+    classify_change: (input: unknown) => classifyChange(classifyChangeInput.parse(input), provider, policy),
     route_task: (input: unknown) => run("route_task", routeTaskInput.parse(input), provider, policy),
     review_risk: (input: unknown) => run("review_risk", reviewRiskInput.parse(input), provider, policy),
     select_tests: (input: unknown) => run("select_tests", selectTestsInput.parse(input), provider, policy),
@@ -65,5 +65,20 @@ async function commandSafety(
     confidence: 1,
     probabilities: { safe: 0, confirm: 0, deny: 1 },
     reasons: reasons.map((reason) => `Denied by rule: ${reason}.`),
+  }, policy);
+}
+
+async function classifyChange(
+  input: z.infer<typeof classifyChangeInput>,
+  provider: DecisionProvider,
+  policy: PolicyConfig,
+): Promise<DecisionEnvelope> {
+  const decision = await provider.decide({ tool: "classify_change", payload: redactPayload(input) });
+  const securityFlagged = Array.isArray(decision.labels) && decision.labels.includes("security_sensitive");
+  if (!securityFlagged) return applyPolicy(decision, policy);
+  return applyPolicy({
+    ...decision,
+    needsHumanReview: true,
+    reasons: [...(decision.reasons ?? []), "Flagged security_sensitive; human review required regardless of the primary label."],
   }, policy);
 }
