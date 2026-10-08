@@ -165,10 +165,10 @@ Output đặc thù:
 
 ```json
 {
-  "testGroups": ["unit-auth", "integration-api"],
-  "testPatterns": ["unit-auth", "integration-api"],
-  "priority": "normal",
-  "confidence": 0.93,
+  "testGroups": ["unit-auth", "integration-api", "security-scan"],
+  "testPatterns": ["unit-auth", "integration-api", "security-scan"],
+  "priority": "full",
+  "confidence": 0.79,
   "probabilities": {
     "unit-auth": 0.99,
     "integration-api": 0.88,
@@ -180,7 +180,7 @@ Output đặc thù:
 }
 ```
 
-Mỗi test group được hỏi bằng một TypeSafe `noul`. Group được chọn khi xác suất `noul >= 0.5`. `priority` là `fast`, `normal` hoặc `full` dựa trên số nhóm được chọn. `uncertainGroups` liệt kê các group có `noul` trong khoảng 0.3–0.7. `confidence` là giá trị thấp nhất trên mọi group, nên nhiều group dễ kéo confidence xuống dưới threshold.
+Mỗi test group được hỏi bằng một TypeSafe `noul`. Chạy thừa một group rẻ hơn bỏ sót một group, nên group được chọn khi `noul >= 0.3` (không phải 0.5). `priority` là `fast`, `normal` hoặc `full` dựa trên số nhóm được chọn. `uncertainGroups` liệt kê các group có `noul` trong khoảng 0.3–0.7; chúng vẫn được chọn. `confidence` chỉ tính trên các group bị bỏ qua, bằng giá trị nhỏ nhất của `1 - noul` (ví dụ trên: `e2e-login` 0.21 → 0.79); nếu mọi group đều được chọn thì `confidence` là `1`. API không trả `confidence` riêng cho `noul`, nên đây là suy ra từ xác suất và chưa được hiệu chuẩn.
 
 ### 5. `triage_error`
 
@@ -379,7 +379,11 @@ TYPESAFE_TIMEOUT_MS=10000
 TYPESAFE_MAX_RETRIES=3
 DECISION_CONFIDENCE_THRESHOLD=0.97
 PORT=3000
+HOST=127.0.0.1
+MCP_AUTH_TOKEN=
 ```
+
+HTTP/SSE mặc định chỉ listen trên `127.0.0.1`. Đặt `HOST` để mở ra interface khác; khi đó bắt buộc đặt `MCP_AUTH_TOKEN`, nếu không server từ chối khởi động. Khi có `MCP_AUTH_TOKEN`, `/sse` và `/messages` yêu cầu header `Authorization: Bearer <token>` (sai hoặc thiếu trả `401`); `/health` luôn mở. Chế độ stdio không dùng các biến này.
 
 HTTP/SSE endpoints:
 

@@ -73,12 +73,13 @@ describe("JevHttpProvider", () => {
       tool: "select_tests",
       payload: { changedFiles: ["a.ts"], availableTests: ["unit", "e2e", "lint"] },
     })).resolves.toMatchObject({
-      testGroups: ["unit"],
+      testGroups: ["unit", "e2e"],
       priority: "normal",
+      confidence: 0.95,
       uncertainGroups: ["e2e"],
       reasons: [
-        "Selected 1 of 3 test group(s): unit.",
-        "Borderline (30-70%), consider running: e2e.",
+        "Selected 2 of 3 test group(s): unit, e2e.",
+        "Borderline groups (30-70%) included conservatively: e2e.",
       ],
     });
   });
@@ -128,5 +129,35 @@ describe("JevHttpProvider", () => {
       maxRetries: 0,
     });
     await expect(provider.decide({ tool: "merge_gate", payload: {} })).resolves.toMatchObject({ reasons: [reason] });
+  });
+
+  it("reports full confidence when every group is selected", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      model: "jev-1.13.0",
+      answers: { unit: { type: "noul", noul: 0.76 }, e2e: { type: "noul", noul: 0.38 } },
+    }))));
+    const provider = new JevHttpProvider({
+      baseUrl: "https://jev.test",
+      apiKey: "test-key",
+      model: "jev",
+      timeoutMs: 1000,
+      maxRetries: 0,
+    });
+    await expect(provider.decide({
+      tool: "select_tests",
+      payload: { changedFiles: ["a.ts"], availableTests: ["unit", "e2e"] },
+    })).resolves.toMatchObject({ testGroups: ["unit", "e2e"], confidence: 1 });
+  });
+
+  it("rejects a select_tests response without noul answers", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ model: "jev-1.13.0", answers: "invalid" }))));
+    const provider = new JevHttpProvider({
+      baseUrl: "https://jev.test",
+      apiKey: "test-key",
+      model: "jev",
+      timeoutMs: 1000,
+      maxRetries: 0,
+    });
+    await expect(provider.decide({ tool: "select_tests", payload: { changedFiles: ["a.ts"] } })).rejects.toThrow("missing the test group");
   });
 });

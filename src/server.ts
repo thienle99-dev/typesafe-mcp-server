@@ -6,6 +6,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { createDecisionHandlers } from "./decisions.js";
 import { loadJevConfig, JevHttpProvider } from "./jev.js";
+import { isAuthorized, loadHttpConfig } from "./httpAuth.js";
 import { loadPolicy } from "./policy.js";
 import {
   assessTaskScopeInput,
@@ -76,18 +77,28 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+const httpConfig = process.env.MCP_TRANSPORT === "stdio" ? { host: "127.0.0.1" } : loadHttpConfig();
+
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 app.get("/health", (_req, res) => res.json({ status: "ok", service: "typesafe-mcp-server" }));
 
-app.get("/sse", async (_req, res) => {
+const requireAuth: express.RequestHandler = (req, res, next) => {
+  if (isAuthorized(req.headers.authorization, httpConfig.authToken)) {
+    next();
+    return;
+  }
+  res.status(401).json({ error: "Unauthorized" });
+};
+
+app.get("/sse", requireAuth, async (_req, res) => {
   const transport = new SSEServerTransport("/messages", res);
   transports.set(transport.sessionId, transport);
   res.on("close", () => transports.delete(transport.sessionId));
   await createMcpServer().connect(transport);
 });
 
-app.post("/messages", async (req, res) => {
+app.post("/messages", requireAuth, async (req, res) => {
   const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : undefined;
   const transport = sessionId ? transports.get(sessionId) : undefined;
   if (!transport) {
@@ -103,5 +114,5 @@ if (process.env.MCP_TRANSPORT === "stdio") {
   const transport = new StdioServerTransport();
   await createMcpServer().connect(transport);
 } else {
-  app.listen(port, () => console.log(`typesafe-mcp-server listening on port ${port}`));
+  app.listen(port, httpConfig.host, () => console.log(`typesafe-mcp-server listening on ${httpConfig.host}:${port}`));
 }

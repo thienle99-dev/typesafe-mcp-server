@@ -1,6 +1,20 @@
 import { choice, noul, TypeSafeClient } from "@typesafe-ai/sdk";
 import type { DecisionEnvelope, DecisionProvider, DecisionTool } from "./types.js";
 
+// Running an extra test group is cheap and missing one is costly, so a group is
+// selected from 0.3 up (not 0.5). Groups in [SELECT_THRESHOLD, BORDERLINE_MAX) are
+// reported as uncertain; confidence only reflects how sure we are about skipped groups.
+const SELECT_THRESHOLD = 0.3;
+const BORDERLINE_MAX = 0.7;
+
+// classify_change also asks one yes/no question per label so a change can carry several.
+const CHANGE_LABEL_QUESTIONS = {
+  behavior_change: "Does this change alter runtime or product behavior?",
+  security_sensitive: "Does this change touch authentication, authorization, secrets, or security controls?",
+  migration: "Does this change schema, data, or migration behavior?",
+} as const;
+const LABEL_PREFIX = "label_";
+
 type Question = ReturnType<typeof choice> | ReturnType<typeof noul>;
 
 interface TypeSafeAnswer {
@@ -85,7 +99,13 @@ function toTypeSafeRequest(tool: DecisionTool, payload: unknown, model: string) 
     };
   }
 
-  return { state, model, questions: { decision: questionFor(tool) } };
+  const questions: Record<string, Question> = { decision: questionFor(tool) };
+  if (tool === "classify_change") {
+    for (const [label, question] of Object.entries(CHANGE_LABEL_QUESTIONS)) {
+      questions[`${LABEL_PREFIX}${label}`] = noul(question);
+    }
+  }
+  return { state, model, questions };
 }
 
 function questionFor(tool: Exclude<DecisionTool, "select_tests">): Question {
@@ -171,14 +191,15 @@ function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<st
   if (tool === "select_tests") {
     const noulAnswers = Object.entries(response.answers)
       .filter((entry): entry is [string, TypeSafeAnswer & { type: "noul"; noul: number }] => entry[1].type === "noul" && typeof entry[1].noul === "number");
-    const selected = noulAnswers.filter(([, answer]) => answer.noul >= 0.5).map(([group]) => group);
+    if (noulAnswers.length === 0) throw new Error("TypeSafe response is missing the test group answers");
+    const selected = noulAnswers.filter(([, answer]) => answer.noul >= SELECT_THRESHOLD).map(([group]) => group);
     const probabilities = Object.fromEntries(noulAnswers.map(([group, answer]) => [group, answer.noul]));
-    const uncertainGroups = noulAnswers.filter(([, answer]) => answer.noul > 0.3 && answer.noul < 0.7).map(([group]) => group);
+    const uncertainGroups = noulAnswers.filter(([, answer]) => answer.noul >= SELECT_THRESHOLD && answer.noul < BORDERLINE_MAX).map(([group]) => group);
     return {
       testGroups: selected,
       testPatterns: selected,
       priority: selected.length > 2 ? "full" : selected.length > 0 ? "normal" : "fast",
-      confidence: confidenceFor(response.answers),
+      confidence: skippedGroupsConfidence(noulAnswers),
       probabilities,
       uncertainGroups,
       reasons: describeTestSelection(selected, uncertainGroups, noulAnswers.length),
@@ -189,11 +210,15 @@ function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<st
   if (!answer) throw new Error("TypeSafe response is missing the decision answer");
 
   if (answer.type === "choice" && answer.choice && answer.probabilities && typeof answer.confidence === "number") {
+    const described = describeChoice(answer.choice, answer.probabilities);
+    const labels = tool === "classify_change" ? describeLabels(answer.choice, response.answers) : {};
     return {
       value: answer.choice,
       confidence: answer.confidence,
       probabilities: answer.probabilities,
-      ...describeChoice(answer.choice, answer.probabilities),
+      ...described,
+      ...labels,
+      reasons: [...described.reasons, ...(labels.reasons ?? [])],
       ...fieldFor(tool, answer.choice),
     };
   }
@@ -236,9 +261,26 @@ function describeChoice(choice: string, probabilities: Record<string, number>) {
   };
 }
 
+function describeLabels(primary: string, answers: Record<string, TypeSafeAnswer>) {
+  const entries = Object.keys(CHANGE_LABEL_QUESTIONS).flatMap((label) => {
+    const answer = answers[`${LABEL_PREFIX}${label}`];
+    return answer?.type === "noul" && typeof answer.noul === "number" ? [[label, answer.noul] as const] : [];
+  });
+  if (entries.length === 0) return {} as { labels?: string[]; labelProbabilities?: Record<string, number>; reasons?: string[] };
+  const labels = entries.filter(([, probability]) => probability >= SELECT_THRESHOLD).map(([label]) => label);
+  const extra = entries.filter(([label, probability]) => label !== primary && probability >= SELECT_THRESHOLD);
+  return {
+    labels,
+    labelProbabilities: Object.fromEntries(entries),
+    reasons: extra.length > 0
+      ? [`Also flagged: ${extra.map(([label, probability]) => `${label} (${Math.round(probability * 100)}%)`).join(", ")}.`]
+      : [],
+  };
+}
+
 function describeTestSelection(selected: string[], uncertain: string[], total: number): string[] {
   const reasons = [`Selected ${selected.length} of ${total} test group(s): ${selected.join(", ") || "none"}.`];
-  if (uncertain.length > 0) reasons.push(`Borderline (30-70%), consider running: ${uncertain.join(", ")}.`);
+  if (uncertain.length > 0) reasons.push(`Borderline groups (30-70%) included conservatively: ${uncertain.join(", ")}.`);
   return reasons;
 }
 
@@ -258,9 +300,8 @@ function fieldFor(tool: DecisionTool, value: string): Record<string, unknown> {
   return { [fields[tool]]: value };
 }
 
-function confidenceFor(answers: Record<string, TypeSafeAnswer>): number {
-  const values = Object.values(answers).map((answer) => answer.type === "noul"
-    ? Math.max(answer.noul ?? 0, 1 - (answer.noul ?? 0))
-    : answer.confidence ?? 0);
-  return values.length === 0 ? 0 : Math.min(...values);
+function skippedGroupsConfidence(answers: Array<[string, { noul: number }]>): number {
+  const skipped = answers.filter(([, answer]) => answer.noul < SELECT_THRESHOLD);
+  if (skipped.length === 0) return 1;
+  return Math.round(Math.min(...skipped.map(([, answer]) => 1 - answer.noul)) * 10_000) / 10_000;
 }
