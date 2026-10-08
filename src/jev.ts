@@ -6,6 +6,8 @@ import type { DecisionEnvelope, DecisionProvider, DecisionTool } from "./types.j
 // reported as uncertain; confidence only reflects how sure we are about skipped groups.
 const SELECT_THRESHOLD = 0.3;
 const BORDERLINE_MAX = 0.7;
+const ROUTE_SUBSYSTEMS = ["frontend", "backend", "infra", "data", "docs"] as const;
+const ROUTE_THRESHOLD = 0.5;
 
 // classify_change also asks one yes/no question per label so a change can carry several.
 const CHANGE_LABEL_QUESTIONS = {
@@ -112,6 +114,19 @@ function toTypeSafeRequest(tool: DecisionTool, payload: unknown, model: string) 
     };
   }
 
+  if (tool === "route_task") {
+    return {
+      state,
+      model,
+      questions: Object.fromEntries(
+        ROUTE_SUBSYSTEMS.map((subsystem) => [
+          subsystem,
+          noul(`Does this task materially involve the ${subsystem} subsystem? Select yes when implementation or review needs to touch it, even if another subsystem is also involved.`),
+        ]),
+      ) as Record<string, Question>,
+    };
+  }
+
   const questions: Record<string, Question> = { decision: questionFor(tool) };
   if (tool === "classify_change") {
     for (const [label, question] of Object.entries(CHANGE_LABEL_QUESTIONS)) {
@@ -121,7 +136,7 @@ function toTypeSafeRequest(tool: DecisionTool, payload: unknown, model: string) 
   return { state, model, questions };
 }
 
-function questionFor(tool: Exclude<DecisionTool, "select_tests">): Question {
+function questionFor(tool: Exclude<DecisionTool, "select_tests" | "route_task">): Question {
   switch (tool) {
     case "classify_change":
       return choice("Classify this code change", {
@@ -131,17 +146,8 @@ function questionFor(tool: Exclude<DecisionTool, "select_tests">): Question {
         migration: "Changes schema, data, or migration behavior",
         unknown: "Insufficient evidence to classify confidently",
       });
-    case "route_task":
-      return choice("Which subsystem should own this task?", {
-        frontend: "UI, browser, client application, or presentation code",
-        backend: "API, service, server-side, or business logic code",
-        infra: "Deployment, CI/CD, cloud, networking, or operations code",
-        data: "Database, schema, ETL, analytics, or data pipeline code",
-        docs: "Documentation or non-executable content",
-        unknown: "Insufficient evidence to route confidently",
-      });
     case "review_risk":
-      return choice("What is the overall risk level of this diff?", {
+      return choice("What is the overall risk level of this diff, considering the structured check statuses first and any free-text results as supporting context? Treat failed checks as risk evidence and not_run checks as missing evidence.", {
         low: "Small, well-isolated change with low blast radius",
         medium: "Moderate behavior or integration risk",
         high: "Large blast radius, sensitive behavior, or weak test evidence",
@@ -177,7 +183,7 @@ function questionFor(tool: Exclude<DecisionTool, "select_tests">): Question {
         deny: "Destructive, irreversible, or broad in scope (for example recursive delete of important paths, force push, dropping data, piping remote scripts to a shell)",
       });
     case "check_breaking_change":
-      return choice("Does this change break backward compatibility for consumers of the public API, schema, CLI, or exported types?", {
+      return choice("Does this diff break backward compatibility for consumers? Use publicApiContext to identify which changed symbols/files are public; callers should provide this context. Inspect explicit export or re-export evidence in the diff when available. Do not assume every changed symbol is public. Return unknown only when public visibility or compatibility impact cannot be established from the diff and context.", {
         none: "No consumer-visible change",
         compatible: "Consumer-visible but backward compatible, such as additive changes",
         breaking: "Removes or changes existing behavior, signatures, schema, or output that consumers may rely on",
@@ -201,6 +207,34 @@ function getTestGroups(state: Record<string, unknown>): string[] {
 }
 
 function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<string, TypeSafeAnswer> }): DecisionEnvelope {
+  if (tool === "route_task") {
+    const missing = ROUTE_SUBSYSTEMS.filter((subsystem) => {
+      const answer = response.answers[subsystem];
+      return answer?.type !== "noul" || typeof answer.noul !== "number";
+    });
+    if (missing.length > 0) throw new Error(`TypeSafe response is missing route subsystem answers: ${missing.join(", ")}`);
+
+    const probabilities = Object.fromEntries(
+      ROUTE_SUBSYSTEMS.map((subsystem) => [subsystem, response.answers[subsystem]!.noul!]),
+    );
+    const selected = ROUTE_SUBSYSTEMS.filter((subsystem) => probabilities[subsystem] >= ROUTE_THRESHOLD);
+    const ordered = selected.sort((a, b) => probabilities[b] - probabilities[a]);
+    const subsystems = ordered.length > 0 ? ordered : ["unknown"];
+    const confidence = Math.round(Math.min(...ROUTE_SUBSYSTEMS.map((subsystem) => Math.max(probabilities[subsystem], 1 - probabilities[subsystem]))) * 10_000) / 10_000;
+    const borderline = ROUTE_SUBSYSTEMS.filter((subsystem) => probabilities[subsystem] >= 0.3 && probabilities[subsystem] < 0.7);
+    return {
+      value: subsystems[0],
+      subsystem: subsystems[0],
+      subsystems,
+      confidence,
+      probabilities,
+      reasons: [
+        `Subsystems selected: ${subsystems.join(", ")}.`,
+        ...(borderline.length > 0 ? [`Borderline subsystem scores (30-70%): ${borderline.map((subsystem) => `${subsystem} (${Math.round(probabilities[subsystem] * 100)}%)`).join(", ")}.`] : []),
+      ],
+    };
+  }
+
   if (tool === "select_tests") {
     const noulAnswers = Object.entries(response.answers)
       .filter((entry): entry is [string, TypeSafeAnswer & { type: "noul"; noul: number }] => entry[1].type === "noul" && typeof entry[1].noul === "number");

@@ -125,16 +125,18 @@ Input:
 }
 ```
 
-Decision chính nằm ở `subsystem`:
+Output:
 
-- `frontend`
-- `backend`
-- `infra`
-- `data`
-- `docs`
-- `unknown`
+```json
+{
+  "subsystem": "backend",
+  "subsystems": ["backend", "data"],
+  "probabilities": { "frontend": 0.08, "backend": 0.91, "infra": 0.12, "data": 0.78, "docs": 0.03 },
+  "confidence": 0.91
+}
+```
 
-`repoContext` và `changedFiles` giúp Jev định tuyến chính xác hơn nhưng không bắt buộc.
+`subsystems` liệt kê mọi subsystem có điểm từ `0.5` trở lên. `subsystem` giữ giá trị cao điểm nhất để tương thích với client cũ; nếu không subsystem nào đạt ngưỡng, cả hai trường trả `unknown` (`subsystems: ["unknown"]`). `probabilities` chứa điểm riêng cho từng subsystem; `confidence` là mức chắc chắn thấp nhất trong các phân loại riêng lẻ. `repoContext` và `changedFiles` giúp Jev định tuyến chính xác hơn nhưng không bắt buộc.
 
 ### 3. `review_risk`
 
@@ -146,10 +148,13 @@ Input:
 {
   "diff": "diff --git a/migrations/001.sql b/migrations/001.sql ...",
   "changedFiles": ["migrations/001.sql", "src/repository/user.ts"],
-  "testResults": "unit tests passed; migration tests not run",
-  "securityResults": "no automated security scan available"
+  "checks": { "tests": "not_run", "lint": "pass", "security": "not_run" },
+  "testResults": "Unit suite not run; migration suite not applicable",
+  "securityResults": "No automated security scan available"
 }
 ```
+
+`checks` is optional and accepts `pass`, `fail` or `not_run` for `tests`, `lint` and `security`. Prefer these typed statuses for check state; `testResults` and `securityResults` remain optional text for details and context. Jev is instructed to treat `fail` as risk evidence and `not_run` as missing evidence.
 
 Decision chính nằm ở `riskLevel`:
 
@@ -328,9 +333,14 @@ Decision chính nằm ở `safety`:
 - `confirm`: ghi hoặc xóa dữ liệu, cài package, ghi qua network, dùng `sudo`, hoặc tác động chưa rõ; hỏi người dùng trước.
 - `deny`: phá hủy, không hoàn tác hoặc phạm vi quá rộng (ví dụ xóa đệ quy đường dẫn quan trọng, force push, drop dữ liệu, pipe script từ xa vào shell).
 
-Một số command bị `deny` ngay bằng rule cứng (`confidence: 1`) mà không gửi sang TypeSafe: xóa đệ quy `/`, `~`, `$HOME` hoặc thư mục hệ thống (`/home`, `/usr`, `/etc`, `/var`, `/Users`...); `git push --force` (kể cả `-f`, `--force-with-lease`), `git push +ref`, `--delete`, `:ref`, `--mirror`; pipe `curl`/`wget` vào shell (kể cả `bash <(curl …)`, `sh -c "$(curl …)"`, `eval "$(curl …)"`); `DROP DATABASE|TABLE|SCHEMA`; `mkfs`; `dd of=/dev/...`; fork bomb; `chmod|chown -R` trên `/`; `--no-preserve-root`. Rule khớp theo text trên toàn command (kể cả sau `&&`, `;`, `|`), nên có false positive, ví dụ `git commit -m 'drop table of contents'` cũng bị `deny`.
+Một số command được quyết định bằng rule cứng (`confidence: 1`) mà không gửi sang TypeSafe:
 
-Các command còn lại do model quyết định. Rule cứng chỉ bắt các dạng viết trực tiếp; command bị che bằng biến, `eval`, base64 hoặc script lồng sẽ không bị bắt. Đây không phải sandbox, và `safe` không thay thế permission của client.
+- `deny`: xóa đệ quy `/`, `~`, `$HOME` hoặc thư mục hệ thống (`/home`, `/usr`, `/etc`, `/var`, `/Users`...); `git push --force` (kể cả `-f`, `--force-with-lease`), `git push +ref`, `--delete`, `:ref`, `--mirror`; pipe `curl`/`wget` vào shell (kể cả `bash <(curl …)`, `sh -c "$(curl …)"`, `eval "$(curl …)"`); `DROP DATABASE|TABLE|SCHEMA`; `mkfs`; `dd of=/dev/...`; fork bomb; `chmod|chown -R` trên `/`; `--no-preserve-root`.
+- `confirm` với `needsHumanReview: true`: `git reset --hard`, `git clean` có `-f` hoặc `--force` (bao gồm `-fd`/`-df`), mọi lệnh `git rebase`, `git cherry-pick`, `docker system prune` và lệnh có `sudo`.
+
+Rule khớp theo text trên toàn command (kể cả sau `&&`, `;`, `|`), nên có thể có false positive; ví dụ `git commit -m 'drop table of contents'` cũng bị `deny`. Các rule chỉ bắt mẫu viết trực tiếp; command bị che bằng biến, `eval`, base64 hoặc script lồng có thể lọt.
+
+Các command còn lại do model quyết định. `command_safety` chỉ trả lời, không thực thi command và không thể ngăn agent chạy lệnh khác hoặc bỏ qua kết quả. Muốn bắt buộc kiểm tra, client phải route việc thực thi shell qua hook/wrapper/gateway áp dụng kết quả; MCP server này không thể ép buộc điều đó. `safe` không thay thế permission của client.
 
 ### 9. `check_breaking_change`
 
@@ -347,7 +357,7 @@ Input:
 }
 ```
 
-Fields: `diff` và `changedFiles` bắt buộc; `publicApiContext`, `commitMessage` tùy chọn. Nên truyền `publicApiContext` để Jev biết phần nào là public.
+Fields: `diff` và `changedFiles` bắt buộc; `publicApiContext`, `commitMessage` tùy chọn. Hãy truyền `publicApiContext` để nêu rõ export/barrel file và symbol nào là API public. Jev cũng kiểm tra bằng chứng export/re-export tường minh trong diff; chỉ trả `unknown` khi diff và context đều không xác định được visibility hoặc ảnh hưởng tương thích.
 
 Decision chính nằm ở `compatibility`:
 
@@ -382,7 +392,7 @@ Decision chính nằm ở `scope`:
 
 MCP adapter sử dụng TypeSafe JavaScript SDK:
 
-- `route_task`, `review_risk`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`, `assess_task_scope`: một câu hỏi `choice`.
+- `route_task`: một câu hỏi `noul` cho mỗi subsystem; `review_risk`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`, `assess_task_scope`: một câu hỏi `choice`.
 - `classify_change`: một câu hỏi `choice` cho `changeType` và một `noul` cho mỗi label (`behavior_change`, `security_sensitive`, `migration`), gửi trong cùng một request.
 - `select_tests`: một `noul` cho mỗi test group.
 - SDK chịu trách nhiệm authentication, request tới `/v1/systemone`, timeout và retry.

@@ -28,9 +28,17 @@ export const routeTaskInput = z.object({
   changedFiles: fileList.optional(),
 });
 
+const checkStatus = z.enum(["pass", "fail", "not_run"]);
+const checksInput = z.object({
+  tests: checkStatus.optional(),
+  lint: checkStatus.optional(),
+  security: checkStatus.optional(),
+});
+
 export const reviewRiskInput = z.object({
   diff: diffText,
   changedFiles: fileList.min(1),
+  checks: checksInput.optional(),
   testResults: text.optional(),
   securityResults: text.optional(),
 });
@@ -83,14 +91,8 @@ export const assessTaskScopeInput = z.object({
   changedFiles: fileList.optional(),
 });
 
-const checkStatus = z.enum(["pass", "fail", "not_run"]);
-
 export const mergeGateInput = z.object({
-  checks: z.object({
-    tests: checkStatus.optional(),
-    lint: checkStatus.optional(),
-    security: checkStatus.optional(),
-  }).optional(),
+  checks: checksInput.optional(),
   changeClassification: boundedRecord.optional(),
   riskReview: boundedRecord.optional(),
   routeDecision: boundedRecord.optional(),
@@ -115,7 +117,10 @@ export const toolOutputs = {
     changeType: z.enum(["safe_refactor", "behavior_change", "security_sensitive", "migration", "unknown"]),
     labels: z.array(z.enum(["behavior_change", "security_sensitive", "migration"])).optional(),
   }),
-  route_task: choiceOutput("subsystem", ["frontend", "backend", "infra", "data", "docs", "unknown"]),
+  route_task: decisionOutput.extend({
+    subsystem: z.enum(["frontend", "backend", "infra", "data", "docs", "unknown"]),
+    subsystems: z.array(z.enum(["frontend", "backend", "infra", "data", "docs", "unknown"])).min(1),
+  }),
   review_risk: choiceOutput("riskLevel", ["low", "medium", "high", "critical"]),
   select_tests: decisionOutput.extend({
     testGroups: z.array(z.string()),
