@@ -33,8 +33,10 @@ Các tool trả về một decision đã được normalize từ TypeSafe:
     "high": 0,
     "critical": 0
   },
+  "runnerUp": { "value": "medium", "probability": 0.02 },
+  "margin": 0.96,
   "reasons": [
-    "Jev selected 'low' from the typed choice rubric."
+    "Selected 'low' (98%); runner-up 'medium' (2%), margin 96%."
   ],
   "needsHumanReview": false
 }
@@ -42,7 +44,8 @@ Các tool trả về một decision đã được normalize từ TypeSafe:
 
 - `confidence`: mức tin cậy từ `0` đến `1`.
 - `probabilities`: phân phối xác suất do TypeSafe trả về nếu answer hỗ trợ field này.
-- `reasons`: rationale ngắn do adapter tạo từ kết quả typed; đây không phải free-form explanation từ Jev.
+- `runnerUp`, `margin`: lựa chọn đứng thứ hai và khoảng cách xác suất so với lựa chọn được chọn (chỉ có với tool dùng `choice`). Margin nhỏ nghĩa là Jev lưỡng lự giữa hai lựa chọn dù `confidence` cao.
+- `reasons`: tóm tắt do adapter tạo từ `probabilities`, không phải giải thích free-form của Jev. Với `select_tests`, nó liệt kê group được chọn và group lưỡng lự; với rule cứng (`merge_gate`, `command_safety`), nó nêu rule đã khớp.
 - `needsHumanReview`: `true` nếu confidence thấp hơn `DECISION_CONFIDENCE_THRESHOLD` hoặc decision đã đánh dấu cần review.
 
 Ngưỡng mặc định là `0.97` và có thể cấu hình bằng `DECISION_CONFIDENCE_THRESHOLD`.

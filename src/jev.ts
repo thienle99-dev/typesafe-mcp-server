@@ -173,14 +173,15 @@ function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<st
       .filter((entry): entry is [string, TypeSafeAnswer & { type: "noul"; noul: number }] => entry[1].type === "noul" && typeof entry[1].noul === "number");
     const selected = noulAnswers.filter(([, answer]) => answer.noul >= 0.5).map(([group]) => group);
     const probabilities = Object.fromEntries(noulAnswers.map(([group, answer]) => [group, answer.noul]));
+    const uncertainGroups = noulAnswers.filter(([, answer]) => answer.noul > 0.3 && answer.noul < 0.7).map(([group]) => group);
     return {
       testGroups: selected,
       testPatterns: selected,
       priority: selected.length > 2 ? "full" : selected.length > 0 ? "normal" : "fast",
       confidence: confidenceFor(response.answers),
       probabilities,
-      uncertainGroups: noulAnswers.filter(([, answer]) => answer.noul > 0.3 && answer.noul < 0.7).map(([group]) => group),
-      reasons: [`Selected ${selected.length} test group(s) using Jev noul probabilities.`],
+      uncertainGroups,
+      reasons: describeTestSelection(selected, uncertainGroups, noulAnswers.length),
     };
   }
 
@@ -192,7 +193,7 @@ function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<st
       value: answer.choice,
       confidence: answer.confidence,
       probabilities: answer.probabilities,
-      reasons: [`Jev selected '${answer.choice}' from the typed choice rubric.`],
+      ...describeChoice(answer.choice, answer.probabilities),
       ...fieldFor(tool, answer.choice),
     };
   }
@@ -202,7 +203,7 @@ function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<st
       value: answer.score,
       confidence: answer.confidence,
       probabilities: answer.probabilities,
-      reasons: ["Jev returned a probability-weighted score."],
+      reasons: [`Score ${answer.score} (confidence ${Math.round(answer.confidence * 100)}%).`],
     };
   }
 
@@ -211,11 +212,34 @@ function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<st
       value: answer.noul,
       confidence: answer.noul,
       probabilities: { "0": 1 - answer.noul, "1": answer.noul },
-      reasons: ["Jev returned a noul probability."],
+      reasons: [`Probability ${Math.round(answer.noul * 100)}% that the answer is yes.`],
     };
   }
 
   throw new Error("TypeSafe response contains an invalid answer");
+}
+
+function describeChoice(choice: string, probabilities: Record<string, number>) {
+  const chosen = probabilities[choice];
+  const runnerUp = Object.entries(probabilities)
+    .filter(([name]) => name !== choice)
+    .sort((a, b) => b[1] - a[1])[0];
+  const percent = (value: number) => `${Math.round(value * 100)}%`;
+  if (chosen === undefined || !runnerUp) {
+    return { reasons: [`Selected '${choice}'.`] };
+  }
+  const margin = chosen - runnerUp[1];
+  return {
+    runnerUp: { value: runnerUp[0], probability: runnerUp[1] },
+    margin,
+    reasons: [`Selected '${choice}' (${percent(chosen)}); runner-up '${runnerUp[0]}' (${percent(runnerUp[1])}), margin ${percent(margin)}.`],
+  };
+}
+
+function describeTestSelection(selected: string[], uncertain: string[], total: number): string[] {
+  const reasons = [`Selected ${selected.length} of ${total} test group(s): ${selected.join(", ") || "none"}.`];
+  if (uncertain.length > 0) reasons.push(`Borderline (30-70%), consider running: ${uncertain.join(", ")}.`);
+  return reasons;
 }
 
 function fieldFor(tool: DecisionTool, value: string): Record<string, unknown> {

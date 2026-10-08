@@ -26,6 +26,8 @@ describe("JevHttpProvider", () => {
     await expect(provider.decide({ tool: "merge_gate", payload: {} })).resolves.toMatchObject({
       decision: "pass",
       confidence: 0.99,
+      runnerUp: { value: "review", probability: 0.01 },
+      reasons: ["Selected 'pass' (99%); runner-up 'review' (1%), margin 98%."],
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://jev.test/v1/systemone",
@@ -74,6 +76,10 @@ describe("JevHttpProvider", () => {
       testGroups: ["unit"],
       priority: "normal",
       uncertainGroups: ["e2e"],
+      reasons: [
+        "Selected 1 of 3 test group(s): unit.",
+        "Borderline (30-70%), consider running: e2e.",
+      ],
     });
   });
 
@@ -104,5 +110,23 @@ describe("JevHttpProvider", () => {
     await expect(provider.decide({ tool, payload: {} })).resolves.toMatchObject({ [field]: choiceValue, confidence: 0.9 });
     const body = String(fetchMock.mock.calls[0][1].body);
     for (const name of choices) expect(body).toContain(name);
+  });
+
+  it.each([
+    [{ type: "score", score: 3.5, confidence: 0.9, probabilities: { "3": 0.5, "4": 0.4 } }, "Score 3.5 (confidence 90%)."],
+    [{ type: "noul", noul: 0.8 }, "Probability 80% that the answer is yes."],
+  ])("describes %j", async (answer, reason) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      model: "jev-1.13.0",
+      answers: { decision: answer },
+    }))));
+    const provider = new JevHttpProvider({
+      baseUrl: "https://jev.test",
+      apiKey: "test-key",
+      model: "jev",
+      timeoutMs: 1000,
+      maxRetries: 0,
+    });
+    await expect(provider.decide({ tool: "merge_gate", payload: {} })).resolves.toMatchObject({ reasons: [reason] });
   });
 });
