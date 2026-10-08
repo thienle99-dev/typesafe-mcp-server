@@ -228,7 +228,7 @@ function describeChoice(choice: string, probabilities: Record<string, number>) {
   if (chosen === undefined || !runnerUp) {
     return { reasons: [`Selected '${choice}'.`] };
   }
-  const margin = chosen - runnerUp[1];
+  const margin = Math.round((chosen - runnerUp[1]) * 10_000) / 10_000;
   return {
     runnerUp: { value: runnerUp[0], probability: runnerUp[1] },
     margin,
