@@ -12,12 +12,12 @@ import {
   checkBreakingChangeInput,
   classifyChangeInput,
   commandSafetyInput,
-  decisionOutput,
   dependencyActionInput,
   mergeGateInput,
   reviewRiskInput,
   routeTaskInput,
   selectTestsInput,
+  toolOutputs,
   triageErrorInput,
 } from "./schemas.js";
 
@@ -28,16 +28,16 @@ const handlers = createDecisionHandlers(provider, policy);
 function createMcpServer() {
   const server = new McpServer({ name: "typesafe-mcp-server", version: "0.1.0" });
 
-  register(server, "classify_change", "Classify a code diff as safe_refactor, behavior_change, security_sensitive, migration or unknown. Call before review or merge. Result is in `changeType`.", classifyChangeInput, handlers.classify_change);
-  register(server, "route_task", "Route a coding task or issue to the owning subsystem (frontend, backend, infra, data, docs, unknown). Call before starting work. Result is in `subsystem`.", routeTaskInput, handlers.route_task);
-  register(server, "review_risk", "Rate the risk of a diff as low, medium, high or critical using changed files and existing test/security results. Result is in `riskLevel`.", reviewRiskInput, handlers.review_risk);
-  register(server, "select_tests", "Select which test groups to run for changed files. Result is `testGroups` plus per-group `probabilities` and a `priority` of fast, normal or full.", selectTestsInput, handlers.select_tests);
-  register(server, "triage_error", "Classify the likely root-cause category of a compiler, test or runtime error (type_error, dependency, flaky_test, config, logic_bug, environment, unknown). Result is in `category`; the agent still investigates and fixes.", triageErrorInput, handlers.triage_error);
-  register(server, "dependency_action", "Decide whether a dependency request should be allowed, pinned, rejected or sent to manual review. Call before running a package manager. Result is in `action`; nothing is installed.", dependencyActionInput, handlers.dependency_action);
-  register(server, "merge_gate", "Aggregate prior decisions and check results into pass, review or block. Result is in `decision`; it does not merge or override branch protection.", mergeGateInput, handlers.merge_gate);
-  register(server, "command_safety", "Rate a shell command as safe, confirm or deny before the agent runs it. Result is in `safety`; `confirm` and `deny` mean the agent should stop and ask the user. The command is not executed.", commandSafetyInput, handlers.command_safety);
-  register(server, "check_breaking_change", "Decide whether a diff breaks backward compatibility for consumers of a public API, schema, CLI or exported types (none, compatible, breaking, unknown). Result is in `compatibility`.", checkBreakingChangeInput, handlers.check_breaking_change);
-  register(server, "assess_task_scope", "Decide before coding whether a task is small, needs_split into steps, or needs_clarification from the user. Result is in `scope`.", assessTaskScopeInput, handlers.assess_task_scope);
+  register(server, "classify_change", "Classify a code diff as safe_refactor, behavior_change, security_sensitive, migration or unknown. Call before review or merge. Result is in `changeType`.", classifyChangeInput, toolOutputs.classify_change, handlers.classify_change);
+  register(server, "route_task", "Route a coding task or issue to the owning subsystem (frontend, backend, infra, data, docs, unknown). Call before starting work. Result is in `subsystem`.", routeTaskInput, toolOutputs.route_task, handlers.route_task);
+  register(server, "review_risk", "Rate the risk of a diff as low, medium, high or critical using changed files and existing test/security results. Result is in `riskLevel`.", reviewRiskInput, toolOutputs.review_risk, handlers.review_risk);
+  register(server, "select_tests", "Select which test groups to run based on the code changes. A non-empty `diff` is required; changed file names and symbols alone are insufficient evidence. Result is `testGroups` plus per-group `probabilities` and a `priority` of fast, normal or full.", selectTestsInput, toolOutputs.select_tests, handlers.select_tests);
+  register(server, "triage_error", "Classify the likely root-cause category of a compiler, test or runtime error (type_error, dependency, flaky_test, config, logic_bug, environment, unknown). Result is in `category`; the agent still investigates and fixes.", triageErrorInput, toolOutputs.triage_error, handlers.triage_error);
+  register(server, "dependency_action", "Decide whether a dependency request should be allowed, pinned, rejected or sent to manual review. Call before running a package manager. Result is in `action`; nothing is installed.", dependencyActionInput, toolOutputs.dependency_action, handlers.dependency_action);
+  register(server, "merge_gate", "Aggregate prior decisions and check results into pass, review or block. Result is in `decision`; it does not merge or override branch protection.", mergeGateInput, toolOutputs.merge_gate, handlers.merge_gate);
+  register(server, "command_safety", "Rate a shell command as safe, confirm or deny before the agent runs it. Result is in `safety`; `confirm` and `deny` mean the agent should stop and ask the user. The command is not executed.", commandSafetyInput, toolOutputs.command_safety, handlers.command_safety);
+  register(server, "check_breaking_change", "Decide whether a diff breaks backward compatibility for consumers of a public API, schema, CLI or exported types (none, compatible, breaking, unknown). Result is in `compatibility`.", checkBreakingChangeInput, toolOutputs.check_breaking_change, handlers.check_breaking_change);
+  register(server, "assess_task_scope", "Decide before coding whether a task is small, needs_split into steps, or needs_clarification from the user. Result is in `scope`.", assessTaskScopeInput, toolOutputs.assess_task_scope, handlers.assess_task_scope);
 
   return server;
 }
@@ -47,6 +47,7 @@ function register(
   name: string,
   description: string,
   schema: z.AnyZodObject,
+  outputSchema: z.AnyZodObject,
   handler: (input: unknown) => Promise<unknown>,
 ) {
   server.registerTool(
@@ -54,12 +55,12 @@ function register(
     {
       description,
       inputSchema: schema.shape,
-      outputSchema: decisionOutput,
+      outputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
     async (input: Record<string, unknown>): Promise<CallToolResult> => {
       try {
-        const result = (await handler(input)) as z.infer<typeof decisionOutput>;
+        const result = (await handler(input)) as Record<string, unknown>;
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
       } catch (error) {
         return { isError: true, content: [{ type: "text" as const, text: `${name} failed: ${errorMessage(error)}` }] };

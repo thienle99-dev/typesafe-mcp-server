@@ -107,7 +107,7 @@ function toTypeSafeRequest(tool: DecisionTool, payload: unknown, model: string) 
       state,
       model,
       questions: Object.fromEntries(
-        groups.map((group) => [group, noul(`Should the ${group} test group run for these changes?`)]),
+        groups.map((group) => [group, noul(`Based on the provided diff, should the ${group} test group run for these code changes? Use the diff as evidence; changed file names and symbols alone are not enough.`)]),
       ) as Record<string, Question>,
     };
   }

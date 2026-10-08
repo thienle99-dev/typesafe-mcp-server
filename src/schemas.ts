@@ -37,6 +37,7 @@ export const reviewRiskInput = z.object({
 
 export const selectTestsInput = z.object({
   changedFiles: fileList.min(1),
+  diff: diffText,
   changedSymbols: fileList.optional(),
   repoContext: text.optional(),
   availableTests: fileList.optional(),
@@ -100,6 +101,29 @@ export const decisionOutput = z.object({
   needsHumanReview: z.boolean().optional(),
   reasons: z.array(z.string()).optional(),
 }).passthrough();
+
+const choiceOutput = <V extends [string, ...string[]]>(field: string, values: V) =>
+  decisionOutput.extend({ [field]: z.enum(values) } as Record<string, z.ZodEnum<V>>);
+
+// Per-tool results, so clients can see which values the main field may take.
+export const toolOutputs = {
+  classify_change: decisionOutput.extend({
+    changeType: z.enum(["safe_refactor", "behavior_change", "security_sensitive", "migration", "unknown"]),
+    labels: z.array(z.enum(["behavior_change", "security_sensitive", "migration"])).optional(),
+  }),
+  route_task: choiceOutput("subsystem", ["frontend", "backend", "infra", "data", "docs", "unknown"]),
+  review_risk: choiceOutput("riskLevel", ["low", "medium", "high", "critical"]),
+  select_tests: decisionOutput.extend({
+    testGroups: z.array(z.string()),
+    priority: z.enum(["fast", "normal", "full"]),
+  }),
+  triage_error: choiceOutput("category", ["type_error", "dependency", "flaky_test", "config", "logic_bug", "environment", "unknown"]),
+  dependency_action: choiceOutput("action", ["allow", "pin", "reject", "manual_review"]),
+  merge_gate: choiceOutput("decision", ["pass", "review", "block"]),
+  command_safety: choiceOutput("safety", ["safe", "confirm", "deny"]),
+  check_breaking_change: choiceOutput("compatibility", ["none", "compatible", "breaking", "unknown"]),
+  assess_task_scope: choiceOutput("scope", ["small", "needs_split", "needs_clarification"]),
+} as const;
 
 export type ToolInput =
   | z.infer<typeof classifyChangeInput>

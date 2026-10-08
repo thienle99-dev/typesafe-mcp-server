@@ -61,7 +61,7 @@ async function mergeGate(
   policy: PolicyConfig,
 ): Promise<DecisionEnvelope> {
   const failed = Object.entries(input.checks ?? {}).filter(([, status]) => status === "fail").map(([name]) => name);
-  if (failed.length === 0) return run("merge_gate", input, provider, policy);
+  if (failed.length === 0) return guardPass(input, await run("merge_gate", input, provider, policy));
   return applyPolicy({
     decision: "block",
     value: "block",
@@ -69,6 +69,28 @@ async function mergeGate(
     probabilities: { pass: 0, review: 0, block: 1 },
     reasons: [`Blocked by failing check(s): ${failed.join(", ")}.`],
   }, policy);
+}
+
+// A model "pass" is only trusted when nothing upstream asked for a closer look.
+function guardPass(input: z.infer<typeof mergeGateInput>, decision: DecisionEnvelope): DecisionEnvelope {
+  if (decision.decision !== "pass") return decision;
+  const reasons: string[] = [];
+  const notRun = Object.entries(input.checks ?? {}).filter(([, status]) => status === "not_run").map(([name]) => name);
+  if (notRun.length > 0) reasons.push(`Check(s) not run: ${notRun.join(", ")}.`);
+  const upstream = { changeClassification: input.changeClassification, riskReview: input.riskReview, routeDecision: input.routeDecision };
+  for (const [name, value] of Object.entries(upstream)) {
+    if (value?.needsHumanReview === true) reasons.push(`${name} requires human review.`);
+  }
+  const labels = input.changeClassification?.labels;
+  if (Array.isArray(labels) && labels.includes("security_sensitive")) reasons.push("Change is labelled security_sensitive.");
+  if (reasons.length === 0) return decision;
+  return {
+    ...decision,
+    decision: "review",
+    value: "review",
+    needsHumanReview: true,
+    reasons: [...(decision.reasons ?? []), `Downgraded from pass to review: ${reasons.join(" ")}`],
+  };
 }
 
 async function commandSafety(

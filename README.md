@@ -50,6 +50,8 @@ Các tool trả về một decision đã được normalize từ TypeSafe:
 
 Ngưỡng mặc định là `0.97` và có thể cấu hình bằng `DECISION_CONFIDENCE_THRESHOLD`.
 
+Mỗi tool công bố `outputSchema` riêng trong `tools/list`, trong đó trường chính là một enum (ví dụ `safety` chỉ nhận `safe`, `confirm`, `deny`). Kết quả không thuộc enum bị SDK trả thành lỗi.
+
 Khi input không hợp lệ hoặc TypeSafe lỗi (timeout, 5xx, mất kết nối), tool không trả decision mà trả lỗi có cấu trúc:
 
 ```json
@@ -164,6 +166,7 @@ Input:
 
 ```json
 {
+  "diff": "diff --git a/src/auth/token.ts b/src/auth/token.ts\\n...",
   "changedFiles": ["src/auth/token.ts", "src/auth/token.test.ts"],
   "changedSymbols": ["verifyToken", "refreshToken"],
   "repoContext": "Node.js service with unit, integration and e2e suites",
@@ -174,6 +177,7 @@ Input:
 Fields:
 
 - `changedFiles` bắt buộc.
+- `diff` bắt buộc và phải chứa thay đổi code thực tế. Không có diff, Jev chỉ thấy tên file và symbol nên server từ chối yêu cầu thay vì đoán test group.
 - `changedSymbols`, `repoContext`, `availableTests` tùy chọn.
 - Nếu không truyền `availableTests`, server dùng các nhóm mặc định: `unit`, `integration`, `e2e`, `lint`, `security`.
 
@@ -284,6 +288,8 @@ Input:
 ```
 
 `checks` là tùy chọn, mỗi giá trị là `pass`, `fail` hoặc `not_run`. Nếu bất kỳ check nào là `fail`, server trả `block` ngay (`confidence: 1`) mà không gọi TypeSafe. Các field dạng text (`testResults`, `lintResults`, `securityResults`) chỉ là context cho Jev, không được server phân tích để suy ra pass/fail.
+
+Kết quả `pass` của Jev bị hạ xuống `review` (`needsHumanReview: true`, kèm dòng `Downgraded from pass to review: ...` trong `reasons`) khi: có check `not_run` (bỏ field nếu check không áp dụng cho repo); `changeClassification.labels` chứa `security_sensitive`; hoặc `changeClassification`, `riskReview`, `routeDecision` có `needsHumanReview: true`. `block` của Jev không bị đổi.
 
 Decision chính nằm ở `decision`:
 

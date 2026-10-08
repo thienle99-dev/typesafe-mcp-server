@@ -24,7 +24,7 @@ describe("merge_gate", () => {
   it("delegates to the provider when no check failed", async () => {
     const { provider, decide } = providerReturning({ confidence: 0.99, decision: "pass" });
     const result = await createDecisionHandlers(provider, policy).merge_gate({
-      checks: { tests: "pass", security: "not_run" },
+      checks: { tests: "pass", lint: "pass" },
     });
     expect(result).toMatchObject({ decision: "pass" });
     expect(decide).toHaveBeenCalledOnce();
@@ -164,4 +164,52 @@ describe("payload size limit", () => {
     await createDecisionHandlers(provider, policy).review_risk({ diff: "x".repeat(99_000), changedFiles: ["a.ts"] });
     expect(decide).toHaveBeenCalledOnce();
   });
+});
+
+describe("merge_gate pass guard", () => {
+  const passing = { confidence: 0.99, decision: "pass", value: "pass", reasons: ["Selected 'pass' (99%)."] };
+
+  it("downgrades pass to review when a check was not run", async () => {
+    const { provider } = providerReturning(passing);
+    const result = await createDecisionHandlers(provider, policy).merge_gate({ checks: { tests: "pass", security: "not_run" } });
+    expect(result).toMatchObject({ decision: "review", value: "review", needsHumanReview: true });
+    expect(result.reasons?.at(-1)).toContain("not run: security");
+  });
+
+  it.each([
+    ["labels security_sensitive", { changeClassification: { labels: ["behavior_change", "security_sensitive"] } }, "security_sensitive"],
+    ["upstream needsHumanReview", { riskReview: { riskLevel: "low", needsHumanReview: true } }, "riskReview requires human review"],
+  ])("downgrades pass to review for %s", async (_name, input, expected) => {
+    const { provider } = providerReturning(passing);
+    const result = await createDecisionHandlers(provider, policy).merge_gate(input);
+    expect(result).toMatchObject({ decision: "review" });
+    expect(result.reasons?.at(-1)).toContain(expected);
+  });
+
+  it("keeps pass when everything ran and nothing was flagged", async () => {
+    const { provider } = providerReturning(passing);
+    const result = await createDecisionHandlers(provider, policy).merge_gate({
+      checks: { tests: "pass", lint: "pass" },
+      changeClassification: { labels: ["behavior_change"], needsHumanReview: false },
+    });
+    expect(result).toMatchObject({ decision: "pass", needsHumanReview: false });
+  });
+
+  it("does not turn a block into review", async () => {
+    const { provider } = providerReturning({ confidence: 0.99, decision: "block", value: "block" });
+    const result = await createDecisionHandlers(provider, policy).merge_gate({ checks: { security: "not_run" } });
+    expect(result).toMatchObject({ decision: "block" });
+  });
+});
+
+describe("select_tests diff", () => {
+  it("forwards a redacted diff to the provider", async () => {
+    const { provider, decide } = providerReturning({ confidence: 1, testGroups: [] });
+    await createDecisionHandlers(provider, policy).select_tests({
+      changedFiles: ["a.ts"],
+      diff: "+const apiKey = \"abcd1234efgh5678\";",
+    });
+    expect(decide.mock.calls[0][0].payload.diff).toBe('+const apiKey = "[REDACTED]";');
+  });
+
 });
