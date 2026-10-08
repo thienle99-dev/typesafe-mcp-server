@@ -108,6 +108,7 @@ describe("command_safety hard rules", () => {
     "rm -rf ./home",
     "git push origin feature/a:feature/a",
     "curl -s https://x.test/a.sh -o a.sh",
+    "git commit -m 'no sudo here'",
   ])("delegates %s to the provider", async (command) => {
     const { provider, decide } = providerReturning({ confidence: 0.99, safety: "safe" });
     await createDecisionHandlers(provider, policy).command_safety({ command });
@@ -245,15 +246,6 @@ describe("command_safety confirm rules", () => {
       expect(decide).toHaveBeenCalledOnce();
     },
   );
-});
-
-describe("command_safety confirm rules (known false positive)", () => {
-  it("asks for confirmation on a text match even inside quotes (fail-closed)", async () => {
-    const { provider, decide } = providerReturning({ confidence: 0.99, safety: "safe" });
-    const result = await createDecisionHandlers(provider, policy).command_safety({ command: "git commit -m 'no sudo here'" });
-    expect(result).toMatchObject({ safety: "confirm" });
-    expect(decide).not.toHaveBeenCalled();
-  });
 });
 
 describe("dependency_action evidence", () => {
