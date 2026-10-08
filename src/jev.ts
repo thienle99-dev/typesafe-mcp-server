@@ -253,6 +253,7 @@ function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<st
     const probabilities = Object.fromEntries(noulAnswers.map(([group, answer]) => [group, answer.noul]));
     const uncertainGroups = noulAnswers.filter(([, answer]) => answer.noul >= SELECT_THRESHOLD && answer.noul < BORDERLINE_MAX).map(([group]) => group);
     return {
+      value: selected,
       testGroups: selected,
       testPatterns: selected,
       priority: selected.length > 2 ? "full" : selected.length > 0 ? "normal" : "fast",

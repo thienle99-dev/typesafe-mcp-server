@@ -114,20 +114,26 @@ export const decisionOutput = z.object({
 }).passthrough();
 
 const choiceOutput = <V extends [string, ...string[]]>(field: string, values: V) =>
-  decisionOutput.extend({ [field]: z.enum(values) } as Record<string, z.ZodEnum<V>>);
+  decisionOutput.extend({
+    value: z.enum(values),
+    [field]: z.enum(values),
+  } as Record<string, z.ZodEnum<V>>);
 
 // Per-tool results, so clients can see which values the main field may take.
 export const toolOutputs = {
   classify_change: decisionOutput.extend({
+    value: z.enum(["safe_refactor", "behavior_change", "security_sensitive", "migration", "unknown"]),
     changeType: z.enum(["safe_refactor", "behavior_change", "security_sensitive", "migration", "unknown"]),
     labels: z.array(z.enum(["behavior_change", "security_sensitive", "migration"])).optional(),
   }),
   route_task: decisionOutput.extend({
+    value: z.enum(["frontend", "backend", "infra", "data", "docs", "unknown"]),
     subsystem: z.enum(["frontend", "backend", "infra", "data", "docs", "unknown"]),
     subsystems: z.array(z.enum(["frontend", "backend", "infra", "data", "docs", "unknown"])).min(1),
   }),
   review_risk: choiceOutput("riskLevel", ["low", "medium", "high", "critical"]),
   select_tests: decisionOutput.extend({
+    value: z.array(z.string()),
     testGroups: z.array(z.string()),
     priority: z.enum(["fast", "normal", "full"]),
   }),
@@ -137,6 +143,7 @@ export const toolOutputs = {
   command_safety: choiceOutput("safety", ["safe", "confirm", "deny"]),
   check_breaking_change: choiceOutput("compatibility", ["none", "compatible", "breaking", "unknown"]),
   assess_task_scope: decisionOutput.extend({
+    value: z.enum(["small", "needs_split", "needs_clarification"]),
     scope: z.enum(["small", "needs_split", "needs_clarification"]),
     splitStrategy: z.enum(["contracts_first", "subsystem_slices", "migration_first", "vertical_slices", "unknown"]).optional(),
     suggestedSteps: z.array(z.string()).optional(),

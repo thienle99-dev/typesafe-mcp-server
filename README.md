@@ -26,6 +26,8 @@ Các tool trả về một decision đã được normalize từ TypeSafe:
 
 ```json
 {
+  "value": "low",
+  "riskLevel": "low",
   "confidence": 0.98,
   "probabilities": {
     "low": 0.98,
@@ -50,7 +52,7 @@ Các tool trả về một decision đã được normalize từ TypeSafe:
 
 Ngưỡng mặc định là `0.97` và có thể cấu hình bằng `DECISION_CONFIDENCE_THRESHOLD`.
 
-Mỗi tool công bố `outputSchema` riêng trong `tools/list`, trong đó trường chính là một enum (ví dụ `safety` chỉ nhận `safe`, `confirm`, `deny`). Kết quả không thuộc enum bị SDK trả thành lỗi.
+Mỗi tool công bố `outputSchema` riêng trong `tools/list`. Các tool phân loại trả `value` làm trường chính thống nhất cùng alias theo tool (`riskLevel`, `safety`, `scope`...) và enum của hai trường luôn giống nhau. `select_tests` dùng `value` là mảng test group, giống `testGroups`. Kết quả ngoài enum bị SDK trả thành lỗi.
 
 Khi input không hợp lệ hoặc TypeSafe lỗi (timeout, 5xx, mất kết nối), tool không trả decision mà trả lỗi có cấu trúc:
 
@@ -99,6 +101,7 @@ Một change có thể thuộc nhiều loại cùng lúc, nên ngoài `changeTyp
 
 ```json
 {
+  "value": "security_sensitive",
   "changeType": "security_sensitive",
   "labels": ["behavior_change", "security_sensitive"],
   "labelProbabilities": { "behavior_change": 0.98, "security_sensitive": 0.96, "migration": 0.18 }
@@ -129,6 +132,7 @@ Output:
 
 ```json
 {
+  "value": "backend",
   "subsystem": "backend",
   "subsystems": ["backend", "data"],
   "probabilities": { "frontend": 0.08, "backend": 0.91, "infra": 0.12, "data": 0.78, "docs": 0.03 },
@@ -190,6 +194,7 @@ Output đặc thù:
 
 ```json
 {
+  "value": ["unit-auth", "integration-api", "security-scan"],
   "testGroups": ["unit-auth", "integration-api", "security-scan"],
   "testPatterns": ["unit-auth", "integration-api", "security-scan"],
   "priority": "full",
