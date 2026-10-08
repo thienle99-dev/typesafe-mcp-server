@@ -1,5 +1,6 @@
 import type { DecisionProvider, DecisionTool } from "./types.js";
 import { applyPolicy } from "./policy.js";
+import { redactPayload } from "./redact.js";
 import {
   classifyChangeInput,
   dependencyActionInput,
@@ -25,7 +26,7 @@ export function createDecisionHandlers(provider: DecisionProvider, policy: Polic
 }
 
 async function run(tool: DecisionTool, payload: unknown, provider: DecisionProvider, policy: PolicyConfig) {
-  return applyPolicy(await provider.decide({ tool, payload }), policy);
+  return applyPolicy(await provider.decide({ tool, payload: redactPayload(payload) }), policy);
 }
 
 async function mergeGate(

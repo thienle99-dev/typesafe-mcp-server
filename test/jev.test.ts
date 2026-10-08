@@ -50,4 +50,30 @@ describe("JevHttpProvider", () => {
     });
     await expect(provider.decide({ tool: "merge_gate", payload: {} })).rejects.toThrow("missing the decision");
   });
+
+  it("selects test groups and reports uncertain ones", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      model: "jev-1.13.0",
+      answers: {
+        unit: { type: "noul", noul: 0.99 },
+        e2e: { type: "noul", noul: 0.4 },
+        lint: { type: "noul", noul: 0.05 },
+      },
+    }))));
+    const provider = new JevHttpProvider({
+      baseUrl: "https://jev.test",
+      apiKey: "test-key",
+      model: "jev",
+      timeoutMs: 1000,
+      maxRetries: 0,
+    });
+    await expect(provider.decide({
+      tool: "select_tests",
+      payload: { changedFiles: ["a.ts"], availableTests: ["unit", "e2e", "lint"] },
+    })).resolves.toMatchObject({
+      testGroups: ["unit"],
+      priority: "normal",
+      uncertainGroups: ["e2e"],
+    });
+  });
 });

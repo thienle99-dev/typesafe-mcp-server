@@ -47,6 +47,19 @@ Các tool trả về một decision đã được normalize từ TypeSafe:
 
 Ngưỡng mặc định là `0.97` và có thể cấu hình bằng `DECISION_CONFIDENCE_THRESHOLD`.
 
+Khi input không hợp lệ hoặc TypeSafe lỗi (timeout, 5xx, mất kết nối), tool không trả decision mà trả lỗi có cấu trúc:
+
+```json
+{
+  "isError": true,
+  "content": [
+    { "type": "text", "text": "merge_gate failed: Connection error: fetch failed" }
+  ]
+}
+```
+
+Agent nên coi đây là "không có decision", không phải `pass`.
+
 ## MCP tools
 
 ### 1. `classify_change`
@@ -159,11 +172,12 @@ Output đặc thù:
     "e2e-login": 0.21,
     "security-scan": 0.35
   },
+  "uncertainGroups": ["security-scan"],
   "needsHumanReview": true
 }
 ```
 
-Mỗi test group được hỏi bằng một TypeSafe `noul`. Group được chọn khi xác suất `noul >= 0.5`. `priority` là `fast`, `normal` hoặc `full` dựa trên số nhóm được chọn.
+Mỗi test group được hỏi bằng một TypeSafe `noul`. Group được chọn khi xác suất `noul >= 0.5`. `priority` là `fast`, `normal` hoặc `full` dựa trên số nhóm được chọn. `uncertainGroups` liệt kê các group có `noul` trong khoảng 0.3–0.7. `confidence` là giá trị thấp nhất trên mọi group, nên nhiều group dễ kéo confidence xuống dưới threshold.
 
 ### 5. `triage_error`
 
@@ -226,6 +240,11 @@ Input:
 
 ```json
 {
+  "checks": {
+    "tests": "pass",
+    "lint": "pass",
+    "security": "not_run"
+  },
   "changeClassification": {
     "changeType": "behavior_change",
     "confidence": 0.98
@@ -244,6 +263,8 @@ Input:
   "changeScope": "3 files, 85 lines changed"
 }
 ```
+
+`checks` là tùy chọn, mỗi giá trị là `pass`, `fail` hoặc `not_run`. Nếu bất kỳ check nào là `fail`, server trả `block` ngay (`confidence: 1`) mà không gọi TypeSafe. Các field dạng text (`testResults`, `lintResults`, `securityResults`) chỉ là context cho Jev, không được server phân tích để suy ra pass/fail.
 
 Decision chính nằm ở `decision`:
 
@@ -368,3 +389,6 @@ Test mặc định mock TypeSafe response, không cần API key production. Serv
 - Confidence thấp hơn threshold luôn đặt `needsHumanReview=true`.
 - Decision không phải authorization cuối cùng cho merge, dependency install hoặc production deploy.
 - Không gửi API key trong MCP payload; cấu hình key bằng environment variable.
+- Trước khi gửi sang TypeSafe, server che secret trong mọi string của payload bằng `[REDACTED]`: private key, AWS/GitHub/Slack/Stripe/Google/npm token, key `sk-`, JWT, `Bearer ...`, URL kèm `user:password@`, giá trị trong dấu nháy gán cho `password`/`secret`/`token`/`api_key` (mọi độ dài), dòng kiểu `.env` (`DB_PASSWORD=...`) và chuỗi base64 dài có entropy cao. Diff của file nhạy cảm (`.env`, `*.pem`, `*.key`, `id_rsa`, `credentials`, `.npmrc`; trừ `.env.example`) bị bỏ toàn bộ nội dung. Đây là lớp giảm thiểu theo pattern, không đảm bảo bắt hết: secret ngắn không dấu nháy, không đặt tên rõ (ví dụ `x = abc123`) hoặc ở định dạng lạ vẫn có thể lọt. Đừng đưa secret vào diff hay log gửi cho tool.
+- Giới hạn input: `diff` tối đa 200.000 ký tự, các string khác tối đa 50.000 ký tự, mỗi danh sách tối đa 500 phần tử. Input vượt giới hạn bị từ chối, không bị cắt.
+- Lỗi từ tool (input sai, TypeSafe timeout hoặc 5xx) trả về `isError: true` kèm message ngắn.

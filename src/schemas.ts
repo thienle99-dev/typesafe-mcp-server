@@ -2,46 +2,54 @@ import { z } from "zod";
 
 const confidence = z.number().min(0).max(1);
 
+const MAX_DIFF_CHARS = 200_000;
+const MAX_TEXT_CHARS = 50_000;
+const MAX_LIST_ITEMS = 500;
+
+const diffText = z.string().min(1).max(MAX_DIFF_CHARS);
+const text = z.string().max(MAX_TEXT_CHARS);
+const fileList = z.array(z.string().max(1_000)).max(MAX_LIST_ITEMS);
+
 export const classifyChangeInput = z.object({
-  diff: z.string().min(1),
-  changedFiles: z.array(z.string()).min(1),
-  commitMessage: z.string().optional(),
+  diff: diffText,
+  changedFiles: fileList.min(1),
+  commitMessage: text.optional(),
 });
 
 export const routeTaskInput = z.object({
-  issue: z.string().min(1),
-  repoContext: z.string().optional(),
-  changedFiles: z.array(z.string()).optional(),
+  issue: text.min(1),
+  repoContext: text.optional(),
+  changedFiles: fileList.optional(),
 });
 
 export const reviewRiskInput = z.object({
-  diff: z.string().min(1),
-  changedFiles: z.array(z.string()).min(1),
-  testResults: z.string().optional(),
-  securityResults: z.string().optional(),
+  diff: diffText,
+  changedFiles: fileList.min(1),
+  testResults: text.optional(),
+  securityResults: text.optional(),
 });
 
 export const selectTestsInput = z.object({
-  changedFiles: z.array(z.string()).min(1),
-  changedSymbols: z.array(z.string()).optional(),
-  repoContext: z.string().optional(),
-  availableTests: z.array(z.string()).optional(),
+  changedFiles: fileList.min(1),
+  changedSymbols: fileList.optional(),
+  repoContext: text.optional(),
+  availableTests: fileList.optional(),
 });
 
 export const triageErrorInput = z.object({
-  error: z.string().min(1),
-  command: z.string().optional(),
-  changedFiles: z.array(z.string()).optional(),
-  recentChanges: z.string().optional(),
+  error: text.min(1),
+  command: text.optional(),
+  changedFiles: fileList.optional(),
+  recentChanges: text.optional(),
 });
 
 export const dependencyActionInput = z.object({
-  dependency: z.string().min(1),
-  requestedVersion: z.string().optional(),
+  dependency: text.min(1),
+  requestedVersion: text.optional(),
   packageManager: z.enum(["npm", "pnpm", "yarn", "pip", "go", "cargo", "other"]),
-  reason: z.string().min(1),
-  existingPolicy: z.string().optional(),
-  changedFiles: z.array(z.string()).optional(),
+  reason: text.min(1),
+  existingPolicy: text.optional(),
+  changedFiles: fileList.optional(),
 });
 
 const checkStatus = z.enum(["pass", "fail", "not_run"]);
@@ -55,10 +63,10 @@ export const mergeGateInput = z.object({
   changeClassification: z.record(z.unknown()).optional(),
   riskReview: z.record(z.unknown()).optional(),
   routeDecision: z.record(z.unknown()).optional(),
-  testResults: z.string().optional(),
-  lintResults: z.string().optional(),
-  securityResults: z.string().optional(),
-  changeScope: z.string().optional(),
+  testResults: text.optional(),
+  lintResults: text.optional(),
+  securityResults: text.optional(),
+  changeScope: text.optional(),
 });
 
 export const decisionOutput = z.object({
