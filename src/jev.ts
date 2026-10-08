@@ -8,6 +8,7 @@ const SELECT_THRESHOLD = 0.3;
 const BORDERLINE_MAX = 0.7;
 const ROUTE_SUBSYSTEMS = ["frontend", "backend", "infra", "data", "docs"] as const;
 const ROUTE_THRESHOLD = 0.5;
+const SPLIT_STRATEGIES = ["contracts_first", "subsystem_slices", "migration_first", "vertical_slices", "unknown"] as const;
 
 // classify_change also asks one yes/no question per label so a change can carry several.
 const CHANGE_LABEL_QUESTIONS = {
@@ -133,6 +134,15 @@ function toTypeSafeRequest(tool: DecisionTool, payload: unknown, model: string) 
       questions[`${LABEL_PREFIX}${label}`] = noul(question);
     }
   }
+  if (tool === "assess_task_scope") {
+    questions.split_plan = choice("If this task needs splitting, which ordered approach best fits the task and repository context?", {
+      contracts_first: "Define shared API, schema, or data contracts first, then update producers and consumers, and finish with integration tests",
+      subsystem_slices: "Implement one subsystem or package at a time, validate each slice, and integrate them at the end",
+      migration_first: "Plan compatibility and data migration first, update dependent services in order, then verify rollout and integrity",
+      vertical_slices: "Deliver independently testable end-to-end feature slices, each spanning the layers it needs",
+      unknown: "There is not enough detail to choose an ordering strategy",
+    });
+  }
   return { state, model, questions };
 }
 
@@ -190,7 +200,7 @@ function questionFor(tool: Exclude<DecisionTool, "select_tests" | "route_task">)
         unknown: "Insufficient evidence to decide",
       });
     case "assess_task_scope":
-      return choice("How should a coding agent handle the scope of this task?", {
+      return choice("How should a coding agent handle this task? Consider task breadth, changed files, repoContext, and repoStats. A large repository alone does not require splitting; weigh coordination and dependency costs.", {
         small: "Well-defined and small enough to implement in one step",
         needs_split: "Large or multi-part; should be split into smaller ordered steps",
         needs_clarification: "Missing requirements, constraints, or acceptance criteria; ask the user before coding",
@@ -259,13 +269,15 @@ function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<st
   if (answer.type === "choice" && answer.choice && answer.probabilities && typeof answer.confidence === "number") {
     const described = describeChoice(answer.choice, answer.probabilities);
     const labels = tool === "classify_change" ? describeLabels(answer.choice, response.answers) : {};
+    const splitPlan = tool === "assess_task_scope" ? suggestSplitPlan(answer.choice, response.answers.split_plan) : {};
     return {
       value: answer.choice,
       confidence: answer.confidence,
       probabilities: answer.probabilities,
       ...described,
       ...labels,
-      reasons: [...described.reasons, ...(labels.reasons ?? [])],
+      ...splitPlan,
+      reasons: [...described.reasons, ...(labels.reasons ?? []), ...(splitPlan.reasons ?? [])],
       ...fieldFor(tool, answer.choice),
     };
   }
@@ -289,6 +301,48 @@ function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<st
   }
 
   throw new Error("TypeSafe response contains an invalid answer");
+}
+
+function suggestSplitPlan(scope: string, answer: TypeSafeAnswer | undefined) {
+  if (scope !== "needs_split") return {};
+
+  const strategy = answer?.type === "choice" && SPLIT_STRATEGIES.includes(answer.choice as typeof SPLIT_STRATEGIES[number])
+    ? answer.choice as typeof SPLIT_STRATEGIES[number]
+    : "unknown";
+  const steps: Record<typeof SPLIT_STRATEGIES[number], string[]> = {
+    contracts_first: [
+      "Confirm shared API, schema, or data contracts and acceptance criteria.",
+      "Implement the contract and its owning service or data layer.",
+      "Update dependent packages and consumers in dependency order.",
+      "Run focused tests for each package, then integration tests across the boundary.",
+    ],
+    subsystem_slices: [
+      "List the affected subsystems and their dependencies.",
+      "Implement one subsystem at a time, with focused validation after each slice.",
+      "Integrate the slices and run cross-subsystem regression tests.",
+    ],
+    migration_first: [
+      "Define migration compatibility, rollout order, and rollback conditions.",
+      "Apply the schema or data migration while preserving compatibility.",
+      "Update dependent services and clients in dependency order.",
+      "Verify data integrity, rollout behavior, and regression tests.",
+    ],
+    vertical_slices: [
+      "Define independently verifiable end-to-end slices and acceptance checks.",
+      "Implement the first slice across the layers it touches and validate it.",
+      "Repeat for remaining slices, then run integration and regression tests.",
+    ],
+    unknown: [
+      "List the independently verifiable parts and dependencies in the task.",
+      "Order prerequisites and shared contracts before dependent implementation.",
+      "Validate each part separately, then run integration tests.",
+    ],
+  };
+  return {
+    splitStrategy: strategy,
+    suggestedSteps: steps[strategy],
+    reasons: [`Suggested split strategy: ${strategy}.`],
+  };
 }
 
 function describeChoice(choice: string, probabilities: Record<string, number>) {

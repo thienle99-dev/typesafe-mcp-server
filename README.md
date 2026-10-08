@@ -376,23 +376,26 @@ Input:
 {
   "task": "Migrate the whole auth system to OAuth and update all clients",
   "repoContext": "Monorepo with web, mobile and API packages",
+  "repoStats": { "sourceFiles": 820, "packages": 7, "modules": 18 },
   "changedFiles": []
 }
 ```
 
-Fields: `task` bắt buộc; `repoContext`, `changedFiles` tùy chọn.
+Fields: `task` bắt buộc; `repoContext`, `repoStats`, `changedFiles` tùy chọn. `repoStats` nhận số `sourceFiles`, `packages`, `modules`; cung cấp các số này nếu caller có thể xác định. Quy mô repo giúp ước lượng chi phí phối hợp, nhưng repo lớn tự nó không có nghĩa task phải tách.
 
 Decision chính nằm ở `scope`:
 
 - `small`: rõ ràng và đủ nhỏ để làm trong một bước.
-- `needs_split`: lớn hoặc nhiều phần; nên tách thành các bước nhỏ theo thứ tự.
+- `needs_split`: lớn hoặc nhiều phần; output kèm `splitStrategy` và `suggestedSteps` có thứ tự.
 - `needs_clarification`: thiếu yêu cầu, ràng buộc hoặc tiêu chí hoàn thành; hỏi người dùng trước khi code.
+
+Kế hoạch tách chọn cách phù hợp theo contracts, subsystem, migration hoặc vertical slices. Nếu Jev không đủ thông tin để chọn strategy cụ thể, server trả kế hoạch tổng quát: liệt kê phần độc lập và dependency, xử lý prerequisite trước, xác minh từng phần rồi integration test.
 
 ## TypeSafe mapping
 
 MCP adapter sử dụng TypeSafe JavaScript SDK:
 
-- `route_task`: một câu hỏi `noul` cho mỗi subsystem; `review_risk`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`, `assess_task_scope`: một câu hỏi `choice`.
+- `route_task`: một câu hỏi `noul` cho mỗi subsystem; `assess_task_scope`: một câu hỏi `choice` cho scope và một câu hỏi `choice` để chọn chiến lược tách; `review_risk`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`: một câu hỏi `choice`.
 - `classify_change`: một câu hỏi `choice` cho `changeType` và một `noul` cho mỗi label (`behavior_change`, `security_sensitive`, `migration`), gửi trong cùng một request.
 - `select_tests`: một `noul` cho mỗi test group.
 - SDK chịu trách nhiệm authentication, request tới `/v1/systemone`, timeout và retry.

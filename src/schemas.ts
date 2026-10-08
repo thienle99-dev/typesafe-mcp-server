@@ -88,6 +88,11 @@ export const checkBreakingChangeInput = z.object({
 export const assessTaskScopeInput = z.object({
   task: text.min(1),
   repoContext: text.optional(),
+  repoStats: z.object({
+    sourceFiles: z.number().int().nonnegative().optional(),
+    packages: z.number().int().nonnegative().optional(),
+    modules: z.number().int().nonnegative().optional(),
+  }).optional(),
   changedFiles: fileList.optional(),
 });
 
@@ -131,7 +136,11 @@ export const toolOutputs = {
   merge_gate: choiceOutput("decision", ["pass", "review", "block"]),
   command_safety: choiceOutput("safety", ["safe", "confirm", "deny"]),
   check_breaking_change: choiceOutput("compatibility", ["none", "compatible", "breaking", "unknown"]),
-  assess_task_scope: choiceOutput("scope", ["small", "needs_split", "needs_clarification"]),
+  assess_task_scope: decisionOutput.extend({
+    scope: z.enum(["small", "needs_split", "needs_clarification"]),
+    splitStrategy: z.enum(["contracts_first", "subsystem_slices", "migration_first", "vertical_slices", "unknown"]).optional(),
+    suggestedSteps: z.array(z.string()).optional(),
+  }),
 } as const;
 
 export type ToolInput =

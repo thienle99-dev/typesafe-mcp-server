@@ -37,7 +37,7 @@ function createMcpServer() {
   register(server, "merge_gate", "Aggregate prior decisions and check results into pass, review or block. Result is in `decision`; it does not merge or override branch protection.", mergeGateInput, toolOutputs.merge_gate, handlers.merge_gate);
   register(server, "command_safety", "Check a shell command before execution. Deterministic rules return `confirm` or `deny` without model discretion for covered commands; other commands are assessed by Jev. The tool does not execute or block commands in the caller's shell, so clients must enforce its result.", commandSafetyInput, toolOutputs.command_safety, handlers.command_safety);
   register(server, "check_breaking_change", "Decide whether a diff breaks backward compatibility for consumers of a public API, schema, CLI or exported types. Pass `publicApiContext` to identify which changed symbols and files are public; the tool may return `unknown` if public visibility or impact cannot be established. Result is in `compatibility`.", checkBreakingChangeInput, toolOutputs.check_breaking_change, handlers.check_breaking_change);
-  register(server, "assess_task_scope", "Decide before coding whether a task is small, needs_split into steps, or needs_clarification from the user. Result is in `scope`.", assessTaskScopeInput, toolOutputs.assess_task_scope, handlers.assess_task_scope);
+  register(server, "assess_task_scope", "Assess task scope using task details, changed files, repo context and optional repoStats (sourceFiles, packages, modules). For `needs_split`, also return `splitStrategy` and ordered `suggestedSteps`.", assessTaskScopeInput, toolOutputs.assess_task_scope, handlers.assess_task_scope);
 
   return server;
 }
