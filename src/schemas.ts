@@ -56,6 +56,10 @@ export const dependencyActionInput = z.object({
   packageManager: z.enum(["npm", "pnpm", "yarn", "pip", "go", "cargo", "other"]),
   reason: text.min(1),
   existingPolicy: text.optional(),
+  existingDependencies: fileList.optional(),
+  license: text.optional(),
+  auditResults: text.optional(),
+  maintenanceStatus: text.optional(),
   changedFiles: fileList.optional(),
 });
 

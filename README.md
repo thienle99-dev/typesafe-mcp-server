@@ -242,6 +242,10 @@ Input:
   "packageManager": "npm",
   "reason": "Validate MCP tool input schemas",
   "existingPolicy": "Production dependencies require pinned major versions",
+  "existingDependencies": ["zod@3.25.0", "ajv@8.17.1"],
+  "license": "MIT",
+  "auditResults": "Example: 0 known vulnerabilities (include audit source and date)",
+  "maintenanceStatus": "Active; recent release and commits",
   "changedFiles": ["package.json", "src/schemas.ts"]
 }
 ```
@@ -254,6 +258,8 @@ Decision chính nằm ở `action`:
 - `manual_review`: phải có human review trước khi thay đổi.
 
 Tool không tự cài package và không chỉnh `package.json`.
+
+`existingDependencies`, `license`, `auditResults` và `maintenanceStatus` là context tùy chọn do caller cung cấp; tool không tự tra cứu registry hay chạy audit. Jev không được suy đoán sức khỏe package từ tên: nếu thiếu hoặc không rõ bằng chứng quan trọng, chọn `manual_review`. Nên liệt kê dependency hiện có để phát hiện giải pháp tương đương trong repo.
 
 ### 7. `merge_gate`
 

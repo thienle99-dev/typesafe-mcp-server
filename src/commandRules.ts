@@ -18,6 +18,15 @@ const PATTERN_RULES: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /--no-preserve-root\b/, reason: "disabling root deletion protection" },
 ];
 
+const CONFIRM_PATTERN_RULES: Array<{ pattern: RegExp; reason: string }> = [
+  { pattern: /\bgit\s+reset\b[^;&|\n]*\s--hard(?:\s|$)/, reason: "git reset --hard can discard local changes" },
+  { pattern: /\bgit\s+clean\b[^;&|\n]*(?:\s-[a-zA-Z]*f[a-zA-Z]*|\s--force)(?:\s|$)/, reason: "forced git clean can delete untracked files" },
+  { pattern: /\bgit\s+rebase\b/, reason: "git rebase rewrites commit history" },
+  { pattern: /\bgit\s+cherry-pick\b/, reason: "git cherry-pick changes repository history" },
+  { pattern: /\bdocker\s+system\s+prune\b/, reason: "docker system prune removes unused Docker data" },
+  { pattern: /(?:^|[;&|\s])sudo(?:\s|$)/, reason: "sudo runs a command with elevated privileges" },
+];
+
 function normalizeTarget(token: string): string {
   const target = token.replace(/^["']|["']$/g, "").replace(/\/\*?$/, "");
   return target === "" ? "/" : target;
@@ -37,4 +46,8 @@ export function findDenyReasons(command: string): string[] {
   const reasons = PATTERN_RULES.filter((rule) => rule.pattern.test(command)).map((rule) => rule.reason);
   if (hasRecursiveRemoveOfProtectedPath(command)) reasons.push("recursive delete of /, ~, $HOME or a system directory");
   return reasons;
+}
+
+export function findConfirmReasons(command: string): string[] {
+  return CONFIRM_PATTERN_RULES.filter((rule) => rule.pattern.test(command)).map((rule) => rule.reason);
 }

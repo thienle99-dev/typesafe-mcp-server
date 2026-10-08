@@ -158,11 +158,11 @@ function questionFor(tool: Exclude<DecisionTool, "select_tests">): Question {
         unknown: "Insufficient evidence to classify confidently",
       });
     case "dependency_action":
-      return choice("What action should be taken for this dependency request?", {
-        allow: "Dependency is safe and can be added as requested",
-        pin: "Allow only with an exact or constrained version",
-        reject: "Do not add the dependency",
-        manual_review: "Require human review before changing dependencies",
+      return choice("Given the repository's existing dependencies, license, security audit and maintenance evidence, what action should be taken for this dependency request? Do not infer package health from its name. Prefer an existing equivalent when appropriate; if material evidence is missing or inconclusive, choose manual_review.", {
+        allow: "Evidence supports adding this dependency and requested version",
+        pin: "Evidence supports it only with an exact or constrained version",
+        reject: "Evidence shows it should not be added",
+        manual_review: "Evidence is missing, inconclusive, or needs human review",
       });
     case "merge_gate":
       return choice("What should the merge gate decide?", {

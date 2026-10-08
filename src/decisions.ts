@@ -1,5 +1,5 @@
 import type { DecisionProvider, DecisionTool } from "./types.js";
-import { findDenyReasons } from "./commandRules.js";
+import { findConfirmReasons, findDenyReasons } from "./commandRules.js";
 import { applyPolicy } from "./policy.js";
 import { redactPayload } from "./redact.js";
 import {
@@ -99,14 +99,29 @@ async function commandSafety(
   policy: PolicyConfig,
 ): Promise<DecisionEnvelope> {
   const reasons = findDenyReasons(input.command);
-  if (reasons.length === 0) return run("command_safety", input, provider, policy);
-  return applyPolicy({
-    safety: "deny",
-    value: "deny",
-    confidence: 1,
-    probabilities: { safe: 0, confirm: 0, deny: 1 },
-    reasons: reasons.map((reason) => `Denied by rule: ${reason}.`),
-  }, policy);
+  if (reasons.length > 0) {
+    return applyPolicy({
+      safety: "deny",
+      value: "deny",
+      confidence: 1,
+      probabilities: { safe: 0, confirm: 0, deny: 1 },
+      reasons: reasons.map((reason) => `Denied by rule: ${reason}.`),
+    }, policy);
+  }
+
+  const confirmReasons = findConfirmReasons(input.command);
+  if (confirmReasons.length > 0) {
+    return applyPolicy({
+      safety: "confirm",
+      value: "confirm",
+      confidence: 1,
+      needsHumanReview: true,
+      probabilities: { safe: 0, confirm: 1, deny: 0 },
+      reasons: confirmReasons.map((reason) => `Confirmation required by rule: ${reason}.`),
+    }, policy);
+  }
+
+  return run("command_safety", input, provider, policy);
 }
 
 async function classifyChange(
