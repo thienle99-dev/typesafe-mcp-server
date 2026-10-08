@@ -396,11 +396,51 @@ Decision chính nằm ở `scope`:
 
 Kế hoạch tách chọn cách phù hợp theo contracts, subsystem, migration hoặc vertical slices. Nếu Jev không đủ thông tin để chọn strategy cụ thể, server trả kế hoạch tổng quát: liệt kê phần độc lập và dependency, xử lý prerequisite trước, xác minh từng phần rồi integration test.
 
+### 11. `assess_test_sufficiency`
+
+Đánh giá test và check hiện có đã bao phủ thay đổi cùng các nguy cơ regression quan trọng chưa.
+
+Input gồm `diff`, `changedFiles` (bắt buộc), `checks` (`tests`, `lint`, `security` với trạng thái `pass`, `fail`, `not_run`), cùng `testPlan`, `testResults`, `coverageSummary` tùy chọn.
+
+`value` và `testSufficiency` trả một trong `sufficient`, `insufficient`, `unknown`. Test không chạy hoặc thiếu coverage cần thiết không được xem như bằng chứng pass.
+
+### 12. `assess_migration_safety`
+
+Đánh giá rollout migration dựa trên tương thích, backup, rollback, validation và check status.
+
+Input gồm `diff`, `changedFiles` (bắt buộc); `migrationPlan`, `rollbackPlan`, `backupStatus`, `compatibilityPlan`, `checks` tùy chọn.
+
+`value` và `migrationSafety` trả `safe`, `review`, `unsafe` hoặc `unknown`.
+
+### 13. `next_action_after_failure`
+
+Chọn bước điều tra hoặc phục hồi tiếp theo sau lỗi command, build hay test.
+
+Input bắt buộc `error`; `command`, `exitCode`, `changedFiles`, `recentChanges`, `attemptedActions` tùy chọn. `attemptedActions` giúp tránh lặp lại cách đã thất bại.
+
+`value` và `nextAction` trả `inspect_failure`, `fix_code`, `retry_with_change`, `check_environment`, `rollback`, `ask_user` hoặc `unknown`.
+
+### 14. `split_commit`
+
+Đề xuất giữ thay đổi trong một commit cohesive hay tách theo feature, subsystem hoặc layer.
+
+Input gồm `diff`, `changedFiles` (bắt buộc); `commitMessage`, `commitGoal`, `repoContext` tùy chọn.
+
+`value` và `commitStrategy` trả `single_commit`, `split_by_feature`, `split_by_subsystem`, `split_by_layer` hoặc `unknown`.
+
+### 15. `triage_review_comment`
+
+Đối chiếu code review comment với diff và context để phân loại comment có cần xử lý không.
+
+Input bắt buộc `comment`; `diff`, `changedFiles`, `filePath`, `reviewerContext` tùy chọn.
+
+`value` và `commentDisposition` trả `actionable`, `false_positive`, `needs_context`, `duplicate` hoặc `out_of_scope`.
+
 ## TypeSafe mapping
 
 MCP adapter sử dụng TypeSafe JavaScript SDK:
 
-- `route_task`: một câu hỏi `noul` cho mỗi subsystem; `assess_task_scope`: một câu hỏi `choice` cho scope và một câu hỏi `choice` để chọn chiến lược tách; `review_risk`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`: một câu hỏi `choice`.
+- `route_task`: một câu hỏi `noul` cho mỗi subsystem; `assess_task_scope`: một câu hỏi `choice` cho scope và một câu hỏi `choice` để chọn chiến lược tách; `review_risk`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`, `assess_test_sufficiency`, `assess_migration_safety`, `next_action_after_failure`, `split_commit`, `triage_review_comment`: một câu hỏi `choice`.
 - `classify_change`: một câu hỏi `choice` cho `changeType` và một `noul` cho mỗi label (`behavior_change`, `security_sensitive`, `migration`), gửi trong cùng một request.
 - `select_tests`: một `noul` cho mỗi test group.
 - SDK chịu trách nhiệm authentication, request tới `/v1/systemone`, timeout và retry.

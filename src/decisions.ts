@@ -4,15 +4,20 @@ import { applyPolicy } from "./policy.js";
 import { redactPayload } from "./redact.js";
 import {
   assessTaskScopeInput,
+  assessTestSufficiencyInput,
+  assessMigrationSafetyInput,
   checkBreakingChangeInput,
   classifyChangeInput,
   commandSafetyInput,
   dependencyActionInput,
   MAX_PAYLOAD_CHARS,
   mergeGateInput,
+  nextActionAfterFailureInput,
   reviewRiskInput,
   routeTaskInput,
   selectTestsInput,
+  splitCommitInput,
+  triageReviewCommentInput,
   triageErrorInput,
 } from "./schemas.js";
 import type { DecisionEnvelope, PolicyConfig } from "./types.js";
@@ -30,6 +35,11 @@ export function createDecisionHandlers(provider: DecisionProvider, policy: Polic
     command_safety: (input: unknown) => commandSafety(commandSafetyInput.parse(input), provider, policy),
     check_breaking_change: (input: unknown) => run("check_breaking_change", checkBreakingChangeInput.parse(input), provider, policy),
     assess_task_scope: (input: unknown) => run("assess_task_scope", assessTaskScopeInput.parse(input), provider, policy),
+    assess_test_sufficiency: (input: unknown) => run("assess_test_sufficiency", assessTestSufficiencyInput.parse(input), provider, policy),
+    assess_migration_safety: (input: unknown) => run("assess_migration_safety", assessMigrationSafetyInput.parse(input), provider, policy),
+    next_action_after_failure: (input: unknown) => run("next_action_after_failure", nextActionAfterFailureInput.parse(input), provider, policy),
+    split_commit: (input: unknown) => run("split_commit", splitCommitInput.parse(input), provider, policy),
+    triage_review_comment: (input: unknown) => run("triage_review_comment", triageReviewCommentInput.parse(input), provider, policy),
   };
 }
 

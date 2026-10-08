@@ -9,14 +9,19 @@ import { loadHttpConfig } from "./httpAuth.js";
 import { loadPolicy } from "./policy.js";
 import {
   assessTaskScopeInput,
+  assessTestSufficiencyInput,
+  assessMigrationSafetyInput,
   checkBreakingChangeInput,
   classifyChangeInput,
   commandSafetyInput,
   dependencyActionInput,
   mergeGateInput,
+  nextActionAfterFailureInput,
   reviewRiskInput,
   routeTaskInput,
   selectTestsInput,
+  splitCommitInput,
+  triageReviewCommentInput,
   toolOutputs,
   triageErrorInput,
 } from "./schemas.js";
@@ -38,6 +43,11 @@ function createMcpServer() {
   register(server, "command_safety", "Check a shell command before execution. Deterministic rules return `confirm` or `deny` without model discretion for covered commands; other commands are assessed by Jev. `value` and `safety` carry the same enum result. The tool does not execute or block commands in the caller's shell, so clients must enforce its result.", commandSafetyInput, toolOutputs.command_safety, handlers.command_safety);
   register(server, "check_breaking_change", "Check only consumer-facing backward compatibility for public APIs, schemas, CLIs and exported types (none, compatible, breaking or unknown). Pass `publicApiContext` to identify public symbols and files. Use this when the question is whether existing consumers still work; `value` and `compatibility` carry the same enum result.", checkBreakingChangeInput, toolOutputs.check_breaking_change, handlers.check_breaking_change);
   register(server, "assess_task_scope", "Assess task scope using task details, changed files, repo context and optional repoStats (sourceFiles, packages, modules). `value` and `scope` carry the same enum result; for `needs_split`, output also includes `splitStrategy` and ordered `suggestedSteps`.", assessTaskScopeInput, toolOutputs.assess_task_scope, handlers.assess_task_scope);
+  register(server, "assess_test_sufficiency", "Assess whether tests and checks cover changed behavior and important regression risks. Provide the diff, typed check statuses and test/coverage details when available. `value` and `testSufficiency` are sufficient, insufficient or unknown.", assessTestSufficiencyInput, toolOutputs.assess_test_sufficiency, handlers.assess_test_sufficiency);
+  register(server, "assess_migration_safety", "Assess migration safety using the diff, compatibility and rollout plan, backup/rollback evidence and check statuses. `value` and `migrationSafety` are safe, review, unsafe or unknown.", assessMigrationSafetyInput, toolOutputs.assess_migration_safety, handlers.assess_migration_safety);
+  register(server, "next_action_after_failure", "Recommend the next investigation or recovery action after a command, build or test failure. Provide error, command, exit code, recent changes and prior attempts when available. `value` and `nextAction` are the same enum result.", nextActionAfterFailureInput, toolOutputs.next_action_after_failure, handlers.next_action_after_failure);
+  register(server, "split_commit", "Recommend whether to keep a diff in one cohesive commit or split by feature, subsystem or layer. Provide changed files, diff and commit goal. `value` and `commitStrategy` are the same enum result.", splitCommitInput, toolOutputs.split_commit, handlers.split_commit);
+  register(server, "triage_review_comment", "Assess whether a code review comment is actionable, a false positive, needs context, duplicates another comment or is out of scope. Provide the diff and location/context when available. `value` and `commentDisposition` are the same enum result.", triageReviewCommentInput, toolOutputs.triage_review_comment, handlers.triage_review_comment);
 
   return server;
 }

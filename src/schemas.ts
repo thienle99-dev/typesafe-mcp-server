@@ -96,6 +96,50 @@ export const assessTaskScopeInput = z.object({
   changedFiles: fileList.optional(),
 });
 
+export const assessTestSufficiencyInput = z.object({
+  diff: diffText,
+  changedFiles: fileList.min(1),
+  checks: checksInput.optional(),
+  testPlan: text.optional(),
+  testResults: text.optional(),
+  coverageSummary: text.optional(),
+});
+
+export const assessMigrationSafetyInput = z.object({
+  diff: diffText,
+  changedFiles: fileList.min(1),
+  migrationPlan: text.optional(),
+  rollbackPlan: text.optional(),
+  backupStatus: text.optional(),
+  compatibilityPlan: text.optional(),
+  checks: checksInput.optional(),
+});
+
+export const nextActionAfterFailureInput = z.object({
+  error: text.min(1),
+  command: text.optional(),
+  exitCode: z.number().int().optional(),
+  changedFiles: fileList.optional(),
+  recentChanges: text.optional(),
+  attemptedActions: fileList.optional(),
+});
+
+export const splitCommitInput = z.object({
+  diff: diffText,
+  changedFiles: fileList.min(1),
+  commitMessage: text.optional(),
+  commitGoal: text.optional(),
+  repoContext: text.optional(),
+});
+
+export const triageReviewCommentInput = z.object({
+  comment: text.min(1),
+  diff: diffText.optional(),
+  changedFiles: fileList.optional(),
+  filePath: text.optional(),
+  reviewerContext: text.optional(),
+});
+
 export const mergeGateInput = z.object({
   checks: checksInput.optional(),
   changeClassification: boundedRecord.optional(),
@@ -148,6 +192,11 @@ export const toolOutputs = {
     splitStrategy: z.enum(["contracts_first", "subsystem_slices", "migration_first", "vertical_slices", "unknown"]).optional(),
     suggestedSteps: z.array(z.string()).optional(),
   }),
+  assess_test_sufficiency: choiceOutput("testSufficiency", ["sufficient", "insufficient", "unknown"]),
+  assess_migration_safety: choiceOutput("migrationSafety", ["safe", "review", "unsafe", "unknown"]),
+  next_action_after_failure: choiceOutput("nextAction", ["inspect_failure", "fix_code", "retry_with_change", "check_environment", "rollback", "ask_user", "unknown"]),
+  split_commit: choiceOutput("commitStrategy", ["single_commit", "split_by_feature", "split_by_subsystem", "split_by_layer", "unknown"]),
+  triage_review_comment: choiceOutput("commentDisposition", ["actionable", "false_positive", "needs_context", "duplicate", "out_of_scope"]),
 } as const;
 
 export type ToolInput =
@@ -160,4 +209,9 @@ export type ToolInput =
   | z.infer<typeof mergeGateInput>
   | z.infer<typeof commandSafetyInput>
   | z.infer<typeof checkBreakingChangeInput>
-  | z.infer<typeof assessTaskScopeInput>;
+  | z.infer<typeof assessTaskScopeInput>
+  | z.infer<typeof assessTestSufficiencyInput>
+  | z.infer<typeof assessMigrationSafetyInput>
+  | z.infer<typeof nextActionAfterFailureInput>
+  | z.infer<typeof splitCommitInput>
+  | z.infer<typeof triageReviewCommentInput>;

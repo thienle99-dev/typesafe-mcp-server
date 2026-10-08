@@ -8,7 +8,12 @@ export type DecisionTool =
   | "merge_gate"
   | "command_safety"
   | "check_breaking_change"
-  | "assess_task_scope";
+  | "assess_task_scope"
+  | "assess_test_sufficiency"
+  | "assess_migration_safety"
+  | "next_action_after_failure"
+  | "split_commit"
+  | "triage_review_comment";
 
 export interface DecisionEnvelope {
   confidence: number;

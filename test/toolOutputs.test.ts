@@ -10,18 +10,32 @@ const inputs = {
   classify_change: { diff: "d", changedFiles: ["a.ts"] },
   route_task: { issue: "fix button" },
   review_risk: { diff: "d", changedFiles: ["a.ts"] },
-  select_tests: { changedFiles: ["a.ts"], availableTests: ["unit", "e2e"] },
+  select_tests: { changedFiles: ["a.ts"], diff: "diff --git a/a.ts b/a.ts", availableTests: ["unit", "e2e"] },
   triage_error: { error: "boom" },
   dependency_action: { dependency: "zod", packageManager: "pnpm", reason: "validation" },
   merge_gate: { checks: { tests: "pass" } },
   command_safety: { command: "git status" },
   check_breaking_change: { diff: "d", changedFiles: ["a.ts"] },
   assess_task_scope: { task: "rename a variable" },
+  assess_test_sufficiency: { diff: "d", changedFiles: ["a.ts"] },
+  assess_migration_safety: { diff: "d", changedFiles: ["migrations/001.sql"] },
+  next_action_after_failure: { error: "build failed" },
+  split_commit: { diff: "d", changedFiles: ["a.ts"] },
+  triage_review_comment: { comment: "Potential null dereference" },
 } as const;
 
 function mockResponse(tool: keyof typeof toolOutputs) {
   if (tool === "select_tests") {
     return { unit: { type: "noul", noul: 0.9 }, e2e: { type: "noul", noul: 0.1 } };
+  }
+  if (tool === "route_task") {
+    return {
+      frontend: { type: "noul", noul: 0.1 },
+      backend: { type: "noul", noul: 0.9 },
+      infra: { type: "noul", noul: 0.1 },
+      data: { type: "noul", noul: 0.1 },
+      docs: { type: "noul", noul: 0.1 },
+    };
   }
   const main = Object.entries(toolOutputs[tool].shape).find(([key]) => key !== "labels" && "options" in (toolOutputs[tool].shape as any)[key]);
   const values = (main![1] as unknown as { options: string[] }).options;

@@ -205,6 +205,45 @@ function questionFor(tool: Exclude<DecisionTool, "select_tests" | "route_task">)
         needs_split: "Large or multi-part; should be split into smaller ordered steps",
         needs_clarification: "Missing requirements, constraints, or acceptance criteria; ask the user before coding",
       });
+    case "assess_test_sufficiency":
+      return choice("Are the provided tests and check results sufficient to validate this diff's changed behavior and important regressions? Treat missing test evidence as insufficient or unknown, not as a pass.", {
+        sufficient: "Relevant changed behavior and regression risks are covered by tests that ran successfully",
+        insufficient: "Important changed behavior or regression risks lack adequate test coverage or checks failed",
+        unknown: "The diff or test evidence is too incomplete to judge coverage",
+      });
+    case "assess_migration_safety":
+      return choice("How safe is this migration given its compatibility, backup, rollback, validation and deployment-order evidence?", {
+        safe: "Backward-compatible or properly staged, with validation and a credible recovery path",
+        review: "Material rollout, data, locking, backup or rollback questions need human review",
+        unsafe: "Evidence shows likely data loss, incompatible rollout, or no viable recovery path",
+        unknown: "Insufficient evidence to assess migration impact or recovery",
+      });
+    case "next_action_after_failure":
+      return choice("What is the best next action for this failure, considering its error, command, recent changes and prior attempts? Choose a concrete investigation or recovery step, not a diagnosis label.", {
+        inspect_failure: "Inspect the full error, logs or failing test to gather missing evidence",
+        fix_code: "Correct the likely code or configuration defect before retrying",
+        retry_with_change: "Retry only after changing a condition, input or transient dependency",
+        check_environment: "Check environment, credentials, network or service availability",
+        rollback: "Revert or roll back the recent change to restore a known-good state",
+        ask_user: "Ask the user because requirements, authorization or recovery intent is unclear",
+        unknown: "Available failure evidence does not support a safe next action",
+      });
+    case "split_commit":
+      return choice("How should these changes be grouped into commits? Keep changes together when they form one cohesive, reviewable unit; otherwise choose the grouping that keeps each commit independently understandable.", {
+        single_commit: "One cohesive change; keep it in a single commit",
+        split_by_feature: "Separate independently reviewable features or fixes",
+        split_by_subsystem: "Separate changes by subsystem or package boundary",
+        split_by_layer: "Separate layers such as schema/API, implementation and tests when each commit remains coherent",
+        unknown: "The diff lacks enough context to recommend a commit grouping",
+      });
+    case "triage_review_comment":
+      return choice("How should this code review comment be triaged against the diff and supplied context? Judge whether it identifies a real issue, not whether its wording sounds confident.", {
+        actionable: "The comment identifies a valid issue that should be addressed",
+        false_positive: "The comment is contradicted by the code or misunderstands the behavior",
+        needs_context: "More code, runtime or product context is needed to decide",
+        duplicate: "The same concern is already raised or addressed elsewhere",
+        out_of_scope: "The suggestion is unrelated to this change or its acceptance criteria",
+      });
   }
 }
 
@@ -399,6 +438,11 @@ function fieldFor(tool: DecisionTool, value: string): Record<string, unknown> {
     command_safety: "safety",
     check_breaking_change: "compatibility",
     assess_task_scope: "scope",
+    assess_test_sufficiency: "testSufficiency",
+    assess_migration_safety: "migrationSafety",
+    next_action_after_failure: "nextAction",
+    split_commit: "commitStrategy",
+    triage_review_comment: "commentDisposition",
   };
   return { [fields[tool]]: value };
 }
