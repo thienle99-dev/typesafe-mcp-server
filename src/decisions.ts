@@ -1,4 +1,5 @@
 import type { DecisionProvider, DecisionTool } from "./types.js";
+import { findDenyReasons } from "./commandRules.js";
 import { applyPolicy } from "./policy.js";
 import { redactPayload } from "./redact.js";
 import {
@@ -25,7 +26,7 @@ export function createDecisionHandlers(provider: DecisionProvider, policy: Polic
     triage_error: (input: unknown) => run("triage_error", triageErrorInput.parse(input), provider, policy),
     dependency_action: (input: unknown) => run("dependency_action", dependencyActionInput.parse(input), provider, policy),
     merge_gate: (input: unknown) => mergeGate(mergeGateInput.parse(input), provider, policy),
-    command_safety: (input: unknown) => run("command_safety", commandSafetyInput.parse(input), provider, policy),
+    command_safety: (input: unknown) => commandSafety(commandSafetyInput.parse(input), provider, policy),
     check_breaking_change: (input: unknown) => run("check_breaking_change", checkBreakingChangeInput.parse(input), provider, policy),
     assess_task_scope: (input: unknown) => run("assess_task_scope", assessTaskScopeInput.parse(input), provider, policy),
   };
@@ -48,5 +49,21 @@ async function mergeGate(
     confidence: 1,
     probabilities: { pass: 0, review: 0, block: 1 },
     reasons: [`Blocked by failing check(s): ${failed.join(", ")}.`],
+  }, policy);
+}
+
+async function commandSafety(
+  input: z.infer<typeof commandSafetyInput>,
+  provider: DecisionProvider,
+  policy: PolicyConfig,
+): Promise<DecisionEnvelope> {
+  const reasons = findDenyReasons(input.command);
+  if (reasons.length === 0) return run("command_safety", input, provider, policy);
+  return applyPolicy({
+    safety: "deny",
+    value: "deny",
+    confidence: 1,
+    probabilities: { safe: 0, confirm: 0, deny: 1 },
+    reasons: reasons.map((reason) => `Denied by rule: ${reason}.`),
   }, policy);
 }
