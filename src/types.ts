@@ -5,7 +5,10 @@ export type DecisionTool =
   | "select_tests"
   | "triage_error"
   | "dependency_action"
-  | "merge_gate";
+  | "merge_gate"
+  | "command_safety"
+  | "check_breaking_change"
+  | "assess_task_scope";
 
 export interface DecisionEnvelope {
   confidence: number;

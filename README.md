@@ -2,7 +2,7 @@
 
 MCP server cho coding agent, dùng TypeSafe System One/Jev để đưa ra các quyết định có schema rõ ràng trong quy trình phát triển phần mềm.
 
-Server này không thay thế Claude Code, Cursor hay Codex trong việc đọc repo, viết code hoặc giải thích thay đổi. Coding agent vẫn thực hiện các tác vụ đó; MCP server chỉ phụ trách các quyết định lặp lại như phân loại change, đánh giá risk, chọn test và merge gate.
+Server này không thay thế Claude Code, Cursor hay Codex trong việc đọc repo, viết code hoặc giải thích thay đổi. Coding agent vẫn thực hiện các tác vụ đó; MCP server chỉ phụ trách các quyết định lặp lại như phân loại change, đánh giá risk, chọn test, kiểm tra command và merge gate.
 
 ## Kiến trúc
 
@@ -274,11 +274,82 @@ Decision chính nằm ở `decision`:
 
 `merge_gate` không merge PR, không gọi Git provider và không override branch protection. Nó chỉ trả decision để coding agent hoặc CI pipeline áp dụng policy riêng.
 
+### 8. `command_safety`
+
+Đánh giá một shell command trước khi agent chạy. Tool không thực thi command.
+
+Input:
+
+```json
+{
+  "command": "rm -rf node_modules dist",
+  "cwd": "/home/dev/app",
+  "purpose": "Clean build output before a fresh install",
+  "repoContext": "Node.js project, pnpm workspace"
+}
+```
+
+Fields: `command` bắt buộc; `cwd`, `purpose`, `repoContext` tùy chọn.
+
+Decision chính nằm ở `safety`:
+
+- `safe`: chỉ đọc hoặc dễ hoàn tác, trong phạm vi project.
+- `confirm`: ghi hoặc xóa dữ liệu, cài package, ghi qua network, dùng `sudo`, hoặc tác động chưa rõ; hỏi người dùng trước.
+- `deny`: phá hủy, không hoàn tác hoặc phạm vi quá rộng (ví dụ xóa đệ quy đường dẫn quan trọng, force push, drop dữ liệu, pipe script từ xa vào shell).
+
+Đây là quyết định do model đưa ra, không phải sandbox: server không có rule cứng chặn command. Không dùng `safe` để thay thế permission của client.
+
+### 9. `check_breaking_change`
+
+Xác định diff có làm hỏng tương thích ngược cho người dùng public API, schema, CLI hoặc exported type hay không.
+
+Input:
+
+```json
+{
+  "diff": "diff --git a/src/api.ts b/src/api.ts ...",
+  "changedFiles": ["src/api.ts"],
+  "publicApiContext": "Library; exports from src/index.ts are public",
+  "commitMessage": "Rename createClient option"
+}
+```
+
+Fields: `diff` và `changedFiles` bắt buộc; `publicApiContext`, `commitMessage` tùy chọn. Nên truyền `publicApiContext` để Jev biết phần nào là public.
+
+Decision chính nằm ở `compatibility`:
+
+- `none`: consumer không thấy thay đổi.
+- `compatible`: consumer thấy thay đổi nhưng tương thích ngược (ví dụ thêm mới).
+- `breaking`: xóa hoặc đổi behavior, signature, schema hay output mà consumer có thể đang dùng.
+- `unknown`: không đủ evidence.
+
+### 10. `assess_task_scope`
+
+Chạy trước khi viết code để quyết định agent làm ngay, tách task hay hỏi lại người dùng.
+
+Input:
+
+```json
+{
+  "task": "Migrate the whole auth system to OAuth and update all clients",
+  "repoContext": "Monorepo with web, mobile and API packages",
+  "changedFiles": []
+}
+```
+
+Fields: `task` bắt buộc; `repoContext`, `changedFiles` tùy chọn.
+
+Decision chính nằm ở `scope`:
+
+- `small`: rõ ràng và đủ nhỏ để làm trong một bước.
+- `needs_split`: lớn hoặc nhiều phần; nên tách thành các bước nhỏ theo thứ tự.
+- `needs_clarification`: thiếu yêu cầu, ràng buộc hoặc tiêu chí hoàn thành; hỏi người dùng trước khi code.
+
 ## TypeSafe mapping
 
 MCP adapter sử dụng TypeSafe JavaScript SDK:
 
-- `classify_change`, `route_task`, `review_risk`, `triage_error`, `dependency_action`, `merge_gate`: một câu hỏi `choice`.
+- `classify_change`, `route_task`, `review_risk`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`, `assess_task_scope`: một câu hỏi `choice`.
 - `select_tests`: một `noul` cho mỗi test group.
 - SDK chịu trách nhiệm authentication, request tới `/v1/systemone`, timeout và retry.
 
@@ -367,9 +438,9 @@ claude mcp add --scope user \
 
 Thêm cùng một rule vào file instruction global của client: `~/.codex/AGENTS.md`, Cursor User Rules, hoặc `~/.claude/CLAUDE.md`.
 
-Agent gọi `typesafe-code` cho decision lặp lại (`classify_change`, `route_task`, `review_risk`, `select_tests`, `triage_error`, `dependency_action`, `merge_gate`) và tự làm theo kết quả khi `confidence >= 0.70`:
+Agent gọi `typesafe-code` cho decision lặp lại (`classify_change`, `route_task`, `review_risk`, `select_tests`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`, `assess_task_scope`) và tự làm theo kết quả khi `confidence >= 0.70`:
 
-- Từ `0.70`: tiếp tục với `pass` hoặc `allow`; `pin` chỉ khi version được siết chặt; dừng nếu decision là `block`, `reject`, hoặc `manual_review`.
+- Từ `0.70`: tiếp tục với `pass`, `allow`, `safe`, `small`, `none` hoặc `compatible`; `pin` chỉ khi version được siết chặt; dừng nếu decision là `block`, `reject`, `manual_review`, `confirm`, `deny`, `breaking` hoặc `needs_clarification` (hỏi người dùng); với `needs_split` thì tách task trước khi code.
 - Dưới `0.70`: dừng và hỏi người dùng.
 - Không dùng cờ `needsHumanReview` cho ngưỡng này. Cờ đó vẫn theo `DECISION_CONFIDENCE_THRESHOLD` (mặc định `0.97`).
 

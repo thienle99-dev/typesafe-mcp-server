@@ -137,6 +137,25 @@ function questionFor(tool: Exclude<DecisionTool, "select_tests">): Question {
         review: "A human should review before merge",
         block: "Merge must be blocked until blockers are resolved",
       });
+    case "command_safety":
+      return choice("How safe is it for a coding agent to run this shell command?", {
+        safe: "Read-only or easily reversible, limited to the working directory or project",
+        confirm: "Modifies or deletes data, installs packages, writes over the network, uses sudo, or has unclear impact; ask the user first",
+        deny: "Destructive, irreversible, or broad in scope (for example recursive delete of important paths, force push, dropping data, piping remote scripts to a shell)",
+      });
+    case "check_breaking_change":
+      return choice("Does this change break backward compatibility for consumers of the public API, schema, CLI, or exported types?", {
+        none: "No consumer-visible change",
+        compatible: "Consumer-visible but backward compatible, such as additive changes",
+        breaking: "Removes or changes existing behavior, signatures, schema, or output that consumers may rely on",
+        unknown: "Insufficient evidence to decide",
+      });
+    case "assess_task_scope":
+      return choice("How should a coding agent handle the scope of this task?", {
+        small: "Well-defined and small enough to implement in one step",
+        needs_split: "Large or multi-part; should be split into smaller ordered steps",
+        needs_clarification: "Missing requirements, constraints, or acceptance criteria; ask the user before coding",
+      });
   }
 }
 
@@ -208,6 +227,9 @@ function fieldFor(tool: DecisionTool, value: string): Record<string, unknown> {
     triage_error: "category",
     dependency_action: "action",
     merge_gate: "decision",
+    command_safety: "safety",
+    check_breaking_change: "compatibility",
+    assess_task_scope: "scope",
   };
   return { [fields[tool]]: value };
 }

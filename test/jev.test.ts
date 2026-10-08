@@ -76,4 +76,33 @@ describe("JevHttpProvider", () => {
       uncertainGroups: ["e2e"],
     });
   });
+
+  it.each([
+    ["command_safety", "safety", "confirm", ["safe", "confirm", "deny"]],
+    ["check_breaking_change", "compatibility", "breaking", ["none", "compatible", "breaking", "unknown"]],
+    ["assess_task_scope", "scope", "needs_split", ["small", "needs_split", "needs_clarification"]],
+  ] as const)("maps %s to %s", async (tool, field, choiceValue, choices) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      model: "jev-1.13.0",
+      answers: {
+        decision: {
+          type: "choice",
+          choice: choiceValue,
+          confidence: 0.9,
+          probabilities: Object.fromEntries(choices.map((name) => [name, name === choiceValue ? 0.9 : 0.1 / (choices.length - 1)])),
+        },
+      },
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new JevHttpProvider({
+      baseUrl: "https://jev.test",
+      apiKey: "test-key",
+      model: "jev",
+      timeoutMs: 1000,
+      maxRetries: 0,
+    });
+    await expect(provider.decide({ tool, payload: {} })).resolves.toMatchObject({ [field]: choiceValue, confidence: 0.9 });
+    const body = String(fetchMock.mock.calls[0][1].body);
+    for (const name of choices) expect(body).toContain(name);
+  });
 });

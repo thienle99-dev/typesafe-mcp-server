@@ -56,6 +56,26 @@ export const dependencyActionInput = z.object({
   changedFiles: fileList.optional(),
 });
 
+export const commandSafetyInput = z.object({
+  command: text.min(1),
+  cwd: text.optional(),
+  purpose: text.optional(),
+  repoContext: text.optional(),
+});
+
+export const checkBreakingChangeInput = z.object({
+  diff: diffText,
+  changedFiles: fileList.min(1),
+  publicApiContext: text.optional(),
+  commitMessage: text.optional(),
+});
+
+export const assessTaskScopeInput = z.object({
+  task: text.min(1),
+  repoContext: text.optional(),
+  changedFiles: fileList.optional(),
+});
+
 const checkStatus = z.enum(["pass", "fail", "not_run"]);
 
 export const mergeGateInput = z.object({
@@ -86,4 +106,7 @@ export type ToolInput =
   | z.infer<typeof selectTestsInput>
   | z.infer<typeof triageErrorInput>
   | z.infer<typeof dependencyActionInput>
-  | z.infer<typeof mergeGateInput>;
+  | z.infer<typeof mergeGateInput>
+  | z.infer<typeof commandSafetyInput>
+  | z.infer<typeof checkBreakingChangeInput>
+  | z.infer<typeof assessTaskScopeInput>;

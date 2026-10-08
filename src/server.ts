@@ -8,7 +8,10 @@ import { createDecisionHandlers } from "./decisions.js";
 import { loadJevConfig, JevHttpProvider } from "./jev.js";
 import { loadPolicy } from "./policy.js";
 import {
+  assessTaskScopeInput,
+  checkBreakingChangeInput,
   classifyChangeInput,
+  commandSafetyInput,
   decisionOutput,
   dependencyActionInput,
   mergeGateInput,
@@ -33,6 +36,9 @@ function createMcpServer() {
   register(server, "triage_error", "Classify the likely root-cause category of a compiler, test or runtime error (type_error, dependency, flaky_test, config, logic_bug, environment, unknown). Result is in `category`; the agent still investigates and fixes.", triageErrorInput, handlers.triage_error);
   register(server, "dependency_action", "Decide whether a dependency request should be allowed, pinned, rejected or sent to manual review. Call before running a package manager. Result is in `action`; nothing is installed.", dependencyActionInput, handlers.dependency_action);
   register(server, "merge_gate", "Aggregate prior decisions and check results into pass, review or block. Result is in `decision`; it does not merge or override branch protection.", mergeGateInput, handlers.merge_gate);
+  register(server, "command_safety", "Rate a shell command as safe, confirm or deny before the agent runs it. Result is in `safety`; `confirm` and `deny` mean the agent should stop and ask the user. The command is not executed.", commandSafetyInput, handlers.command_safety);
+  register(server, "check_breaking_change", "Decide whether a diff breaks backward compatibility for consumers of a public API, schema, CLI or exported types (none, compatible, breaking, unknown). Result is in `compatibility`.", checkBreakingChangeInput, handlers.check_breaking_change);
+  register(server, "assess_task_scope", "Decide before coding whether a task is small, needs_split into steps, or needs_clarification from the user. Result is in `scope`.", assessTaskScopeInput, handlers.assess_task_scope);
 
   return server;
 }

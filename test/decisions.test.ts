@@ -33,3 +33,26 @@ describe("merge_gate", () => {
     expect(() => createDecisionHandlers(provider, policy).merge_gate({ checks: { tests: "ok" } })).toThrow();
   });
 });
+
+describe("new tools", () => {
+  it("validates input and redacts secrets in command_safety", async () => {
+    const { provider, decide } = providerReturning({ confidence: 0.99, safety: "confirm" });
+    const handlers = createDecisionHandlers(provider, policy);
+    expect(() => handlers.command_safety({ command: "" })).toThrow();
+    await handlers.command_safety({ command: "curl -H 'Authorization: Bearer abcdefghijklmnop1234' https://x.test" });
+    expect(decide.mock.calls[0][0]).toMatchObject({ tool: "command_safety" });
+    expect(decide.mock.calls[0][0].payload.command).toContain("Bearer [REDACTED]");
+  });
+
+  it("requires diff and changedFiles for check_breaking_change", () => {
+    const { provider } = providerReturning({ confidence: 1 });
+    const handlers = createDecisionHandlers(provider, policy);
+    expect(() => handlers.check_breaking_change({ diff: "d" })).toThrow();
+  });
+
+  it("accepts a task-only input for assess_task_scope", async () => {
+    const { provider, decide } = providerReturning({ confidence: 0.99, scope: "small" });
+    await createDecisionHandlers(provider, policy).assess_task_scope({ task: "Rename a variable" });
+    expect(decide).toHaveBeenCalledOnce();
+  });
+});
