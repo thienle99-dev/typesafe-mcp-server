@@ -213,3 +213,89 @@ describe("select_tests diff", () => {
   });
 
 });
+
+describe("command_safety confirm rules", () => {
+  it.each([
+    "git reset --hard HEAD~1",
+    "git clean -fd",
+    "git clean --force -x",
+    "git rebase main",
+    "git cherry-pick abc123",
+    "docker system prune -a",
+    "sudo apt-get install jq",
+    "echo done && sudo systemctl restart nginx",
+  ])("requires confirmation for %s without calling the provider", async (command) => {
+    const { provider, decide } = providerReturning({ confidence: 0.99, safety: "safe" });
+    const result = await createDecisionHandlers(provider, policy).command_safety({ command });
+    expect(result).toMatchObject({ safety: "confirm", value: "confirm", confidence: 1, needsHumanReview: true });
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it("lets deny win over confirm", async () => {
+    const { provider } = providerReturning({ confidence: 0.99, safety: "safe" });
+    const result = await createDecisionHandlers(provider, policy).command_safety({ command: "sudo rm -rf /" });
+    expect(result).toMatchObject({ safety: "deny" });
+  });
+
+  it.each(["git status", "git reset HEAD file.ts", "git clean -n", "pnpm install"])(
+    "delegates %s to the provider",
+    async (command) => {
+      const { provider, decide } = providerReturning({ confidence: 0.99, safety: "safe" });
+      await createDecisionHandlers(provider, policy).command_safety({ command });
+      expect(decide).toHaveBeenCalledOnce();
+    },
+  );
+});
+
+describe("command_safety confirm rules (known false positive)", () => {
+  it("asks for confirmation on a text match even inside quotes (fail-closed)", async () => {
+    const { provider, decide } = providerReturning({ confidence: 0.99, safety: "safe" });
+    const result = await createDecisionHandlers(provider, policy).command_safety({ command: "git commit -m 'no sudo here'" });
+    expect(result).toMatchObject({ safety: "confirm" });
+    expect(decide).not.toHaveBeenCalled();
+  });
+});
+
+describe("dependency_action evidence", () => {
+  it("forwards existing dependencies, license, audit and maintenance to the provider", async () => {
+    const { provider, decide } = providerReturning({ confidence: 1, action: "reject" });
+    await createDecisionHandlers(provider, policy).dependency_action({
+      dependency: "axios",
+      packageManager: "pnpm",
+      reason: "HTTP requests",
+      existingDependencies: ["ky", "zod"],
+      license: "MIT",
+      auditResults: "found 0 vulnerabilities",
+      maintenanceStatus: "last release 2 months ago",
+    });
+    expect(decide.mock.calls[0][0].payload).toMatchObject({
+      existingDependencies: ["ky", "zod"],
+      license: "MIT",
+      auditResults: "found 0 vulnerabilities",
+      maintenanceStatus: "last release 2 months ago",
+    });
+  });
+
+  it("still accepts the previous input shape", async () => {
+    const { provider, decide } = providerReturning({ confidence: 1, action: "allow" });
+    await createDecisionHandlers(provider, policy).dependency_action({ dependency: "zod", packageManager: "npm", reason: "validation" });
+    expect(decide).toHaveBeenCalledOnce();
+  });
+});
+
+describe("new assessment tools", () => {
+  it.each([
+    ["assess_test_sufficiency", { diff: "d", changedFiles: ["a.ts"], checks: { tests: "pass" } }],
+    ["assess_migration_safety", { diff: "d", changedFiles: ["m.sql"], rollbackPlan: "restore snapshot" }],
+    ["next_action_after_failure", { error: "boom", exitCode: 1, attemptedActions: ["pnpm test"] }],
+    ["split_commit", { diff: "d", changedFiles: ["a.ts"], commitGoal: "fix" }],
+    ["triage_review_comment", { comment: "null check?", filePath: "a.ts" }],
+  ] as const)("%s validates input, redacts secrets and calls the provider", async (tool, input) => {
+    const { provider, decide } = providerReturning({ confidence: 1 });
+    const handlers = createDecisionHandlers(provider, policy);
+    await handlers[tool]({ ...input, ...(tool === "next_action_after_failure" ? { error: "token=abcdefgh12345678" } : {}) });
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ tool }));
+    if (tool === "next_action_after_failure") expect(decide.mock.calls[0][0].payload.error).toBe("token=[REDACTED]");
+    expect(() => handlers[tool]({})).toThrow();
+  });
+});

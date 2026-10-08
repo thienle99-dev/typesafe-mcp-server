@@ -294,6 +294,40 @@ describe("JevHttpProvider", () => {
   });
 });
 
+describe("route_task routing", () => {
+  const config = { baseUrl: "https://jev.test", apiKey: "test-key", model: "jev", timeoutMs: 1000, maxRetries: 0 };
+  const answers = (scores: Record<string, number>) =>
+    Object.fromEntries(Object.entries(scores).map(([name, noul]) => [name, { type: "noul", noul }]));
+  const route = async (scores: Record<string, number>) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ model: "jev", answers: answers(scores) }))));
+    return new JevHttpProvider(config).decide({ tool: "route_task", payload: { issue: "x" } });
+  };
+
+  it("returns every subsystem at or above 0.5, highest first, and keeps subsystem for old clients", async () => {
+    const result = await route({ frontend: 0.2, backend: 0.9, infra: 0.1, data: 0.6, docs: 0.05 });
+    expect(result).toMatchObject({ subsystem: "backend", value: "backend", subsystems: ["backend", "data"] });
+  });
+
+  it("bases confidence on skipped subsystems only", async () => {
+    const result = await route({ frontend: 0.02, backend: 0.03, infra: 0.05, data: 0.04, docs: 0.88 });
+    expect(result).toMatchObject({ subsystems: ["docs"], confidence: 0.95 });
+  });
+
+  it("reports full confidence when every subsystem is selected", async () => {
+    const result = await route({ frontend: 0.9, backend: 0.9, infra: 0.9, data: 0.9, docs: 0.9 });
+    expect(result).toMatchObject({ confidence: 1 });
+  });
+
+  it("falls back to unknown when nothing reaches the threshold", async () => {
+    const result = await route({ frontend: 0.2, backend: 0.4, infra: 0.1, data: 0.1, docs: 0.1 });
+    expect(result).toMatchObject({ subsystem: "unknown", subsystems: ["unknown"], confidence: 0.6 });
+  });
+
+  it("rejects a response with missing subsystem answers", async () => {
+    await expect(route({ frontend: 0.2, backend: 0.4 })).rejects.toThrow("missing route subsystem answers: infra, data, docs");
+  });
+});
+
 const REASON_PATTERNS = [
   /^Selected '[^']+'\.$/,
   /^Selected '[^']+' \(\d+%\); runner-up '[^']+' \(\d+%\), margin -?\d+%\.$/,

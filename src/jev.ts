@@ -269,7 +269,10 @@ function fromTypeSafeResponse(tool: DecisionTool, response: { answers: Record<st
     const selected = ROUTE_SUBSYSTEMS.filter((subsystem) => probabilities[subsystem] >= ROUTE_THRESHOLD);
     const ordered = selected.sort((a, b) => probabilities[b] - probabilities[a]);
     const subsystems = ordered.length > 0 ? ordered : ["unknown"];
-    const confidence = Math.round(Math.min(...ROUTE_SUBSYSTEMS.map((subsystem) => Math.max(probabilities[subsystem], 1 - probabilities[subsystem]))) * 10_000) / 10_000;
+    // Routing to an extra subsystem is cheap and missing one is costly, so confidence only
+    // reflects how sure we are about the subsystems that were left out.
+    const skipped = ROUTE_SUBSYSTEMS.filter((subsystem) => probabilities[subsystem] < ROUTE_THRESHOLD);
+    const confidence = skipped.length === 0 ? 1 : Math.round(Math.min(...skipped.map((subsystem) => 1 - probabilities[subsystem])) * 10_000) / 10_000;
     const borderline = ROUTE_SUBSYSTEMS.filter((subsystem) => probabilities[subsystem] >= 0.3 && probabilities[subsystem] < 0.7);
     return {
       value: subsystems[0],

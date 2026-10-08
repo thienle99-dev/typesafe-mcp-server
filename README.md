@@ -136,11 +136,11 @@ Output:
   "subsystem": "backend",
   "subsystems": ["backend", "data"],
   "probabilities": { "frontend": 0.08, "backend": 0.91, "infra": 0.12, "data": 0.78, "docs": 0.03 },
-  "confidence": 0.91
+  "confidence": 0.88
 }
 ```
 
-`subsystems` liệt kê mọi subsystem có điểm từ `0.5` trở lên. `subsystem` giữ giá trị cao điểm nhất để tương thích với client cũ; nếu không subsystem nào đạt ngưỡng, cả hai trường trả `unknown` (`subsystems: ["unknown"]`). `probabilities` chứa điểm riêng cho từng subsystem; `confidence` là mức chắc chắn thấp nhất trong các phân loại riêng lẻ. `repoContext` và `changedFiles` giúp Jev định tuyến chính xác hơn nhưng không bắt buộc.
+`subsystems` liệt kê mọi subsystem có điểm từ `0.5` trở lên. `confidence` chỉ tính trên các subsystem bị bỏ qua (nhỏ nhất của `1 - điểm`), vì định tuyến thừa rẻ hơn bỏ sót; nếu mọi subsystem đều được chọn thì `confidence` là `1`. `subsystem` giữ giá trị cao điểm nhất để tương thích với client cũ; nếu không subsystem nào đạt ngưỡng, cả hai trường trả `unknown` (`subsystems: ["unknown"]`). `probabilities` chứa điểm riêng cho từng subsystem; `confidence` là mức chắc chắn thấp nhất trong các phân loại riêng lẻ. `repoContext` và `changedFiles` giúp Jev định tuyến chính xác hơn nhưng không bắt buộc.
 
 ### 3. `review_risk`
 
@@ -534,9 +534,9 @@ claude mcp add --scope user \
 
 Thêm cùng một rule vào file instruction global của client: `~/.codex/AGENTS.md`, Cursor User Rules, hoặc `~/.claude/CLAUDE.md`.
 
-Agent gọi `typesafe-code` cho decision lặp lại (`classify_change`, `route_task`, `review_risk`, `select_tests`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`, `assess_task_scope`) và tự làm theo kết quả khi `confidence >= 0.70`:
+Agent gọi `typesafe-code` cho decision lặp lại (`classify_change`, `route_task`, `review_risk`, `select_tests`, `triage_error`, `dependency_action`, `merge_gate`, `command_safety`, `check_breaking_change`, `assess_task_scope`, `assess_test_sufficiency`, `assess_migration_safety`, `next_action_after_failure`, `split_commit`, `triage_review_comment`) và tự làm theo kết quả khi `confidence >= 0.70`:
 
-- Từ `0.70`: tiếp tục với `pass`, `allow`, `safe`, `small`, `none` hoặc `compatible`; `pin` chỉ khi version được siết chặt; dừng nếu decision là `block`, `reject`, `manual_review`, `confirm`, `deny`, `breaking` hoặc `needs_clarification` (hỏi người dùng); với `needs_split` thì tách task trước khi code.
+- Từ `0.70`: tiếp tục với `pass`, `allow`, `safe`, `small`, `none` hoặc `compatible`; `pin` chỉ khi version được siết chặt; dừng nếu decision là `block`, `reject`, `manual_review`, `confirm`, `deny`, `breaking` hoặc `needs_clarification` (hỏi người dùng); với `needs_split` thì tách task trước khi code. Các tool mới: tiếp tục với `sufficient`, `safe` (migration), `single_commit` hoặc `actionable`; dừng và hỏi người dùng với `insufficient`, `unsafe`, `review` (migration), `ask_user` hoặc `rollback`; `split_by_*` nghĩa là tách commit trước khi commit; `fix_code`, `retry_with_change`, `inspect_failure`, `check_environment` là gợi ý bước tiếp theo, không phải lệnh dừng; `false_positive`, `duplicate`, `out_of_scope`, `needs_context` là cách xử lý comment review, agent vẫn nên nói rõ lý do với người dùng.
 - Dưới `0.70`: dừng và hỏi người dùng.
 - Không dùng cờ `needsHumanReview` cho ngưỡng này. Cờ đó vẫn theo `DECISION_CONFIDENCE_THRESHOLD` (mặc định `0.97`).
 

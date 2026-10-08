@@ -24,8 +24,10 @@ const CONFIRM_PATTERN_RULES: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bgit\s+rebase\b/, reason: "git rebase rewrites commit history" },
   { pattern: /\bgit\s+cherry-pick\b/, reason: "git cherry-pick changes repository history" },
   { pattern: /\bdocker\s+system\s+prune\b/, reason: "docker system prune removes unused Docker data" },
-  { pattern: /(?:^|[;&|\s])sudo(?:\s|$)/, reason: "sudo runs a command with elevated privileges" },
 ];
+
+const SUDO_REASON = "sudo runs a command with elevated privileges";
+const COMMAND_WRAPPERS = new Set(["command", "env", "exec", "nice", "nohup", "time"]);
 
 function normalizeTarget(token: string): string {
   const target = token.replace(/^["']|["']$/g, "").replace(/\/\*?$/, "");
@@ -42,6 +44,67 @@ function hasRecursiveRemoveOfProtectedPath(command: string): boolean {
   return false;
 }
 
+function containsSudoInvocation(command: string): boolean {
+  const segments: string[][] = [];
+  let words: string[] = [];
+  let word = "";
+  let inWord = false;
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+
+  const flushWord = () => {
+    if (inWord) words.push(word);
+    word = "";
+    inWord = false;
+  };
+  const flushSegment = () => {
+    flushWord();
+    if (words.length > 0) segments.push(words);
+    words = [];
+  };
+
+  for (const char of command) {
+    if (escaped) {
+      word += char;
+      inWord = true;
+      escaped = false;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = null;
+      else word += char;
+      inWord = true;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      inWord = true;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+      inWord = true;
+    } else if (/[;&|\n()]/.test(char)) {
+      flushSegment();
+    } else if (/\s/.test(char)) {
+      flushWord();
+    } else {
+      word += char;
+      inWord = true;
+    }
+  }
+  flushSegment();
+
+  return segments.some((segment) => {
+    let index = 0;
+    while (index < segment.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(segment[index])) index += 1;
+    while (index < segment.length && ["if", "then", "else", "do", "!"].includes(segment[index])) index += 1;
+    while (index < segment.length && COMMAND_WRAPPERS.has(segment[index])) {
+      index += 1;
+      while (index < segment.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(segment[index])) index += 1;
+    }
+    return segment[index] === "sudo";
+  });
+}
+
 export function findDenyReasons(command: string): string[] {
   const reasons = PATTERN_RULES.filter((rule) => rule.pattern.test(command)).map((rule) => rule.reason);
   if (hasRecursiveRemoveOfProtectedPath(command)) reasons.push("recursive delete of /, ~, $HOME or a system directory");
@@ -49,5 +112,7 @@ export function findDenyReasons(command: string): string[] {
 }
 
 export function findConfirmReasons(command: string): string[] {
-  return CONFIRM_PATTERN_RULES.filter((rule) => rule.pattern.test(command)).map((rule) => rule.reason);
+  const reasons = CONFIRM_PATTERN_RULES.filter((rule) => rule.pattern.test(command)).map((rule) => rule.reason);
+  if (containsSudoInvocation(command)) reasons.push(SUDO_REASON);
+  return reasons;
 }
