@@ -297,7 +297,7 @@ Decision chính nằm ở `safety`:
 - `confirm`: ghi hoặc xóa dữ liệu, cài package, ghi qua network, dùng `sudo`, hoặc tác động chưa rõ; hỏi người dùng trước.
 - `deny`: phá hủy, không hoàn tác hoặc phạm vi quá rộng (ví dụ xóa đệ quy đường dẫn quan trọng, force push, drop dữ liệu, pipe script từ xa vào shell).
 
-Một số command bị `deny` ngay bằng rule cứng (`confidence: 1`) mà không gửi sang TypeSafe: xóa đệ quy `/`, `~`, `$HOME`; `git push --force` (kể cả `-f`, `--force-with-lease`); pipe `curl`/`wget` vào shell; `DROP DATABASE|TABLE|SCHEMA`; `mkfs`; `dd of=/dev/...`; fork bomb; `chmod|chown -R` trên `/`; `--no-preserve-root`. Rule khớp theo text trên toàn command (kể cả sau `&&`, `;`, `|`), nên có false positive, ví dụ `git commit -m 'drop table of contents'` cũng bị `deny`.
+Một số command bị `deny` ngay bằng rule cứng (`confidence: 1`) mà không gửi sang TypeSafe: xóa đệ quy `/`, `~`, `$HOME` hoặc thư mục hệ thống (`/home`, `/usr`, `/etc`, `/var`, `/Users`...); `git push --force` (kể cả `-f`, `--force-with-lease`), `git push +ref`, `--delete`, `:ref`, `--mirror`; pipe `curl`/`wget` vào shell (kể cả `bash <(curl …)`, `sh -c "$(curl …)"`, `eval "$(curl …)"`); `DROP DATABASE|TABLE|SCHEMA`; `mkfs`; `dd of=/dev/...`; fork bomb; `chmod|chown -R` trên `/`; `--no-preserve-root`. Rule khớp theo text trên toàn command (kể cả sau `&&`, `;`, `|`), nên có false positive, ví dụ `git commit -m 'drop table of contents'` cũng bị `deny`.
 
 Các command còn lại do model quyết định. Rule cứng chỉ bắt các dạng viết trực tiếp; command bị che bằng biến, `eval`, base64 hoặc script lồng sẽ không bị bắt. Đây không phải sandbox, và `safe` không thay thế permission của client.
 

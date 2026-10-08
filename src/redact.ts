@@ -20,6 +20,7 @@ const QUOTED_SECRET = new RegExp(`\\b(${SECRET_NAME}["']?\\s*[:=]\\s*)(["'])[^"'
 const ENV_LINE_SECRET = /^([+\-\s]*(?:export\s+)?[A-Z][A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY)[A-Z0-9_]*\s*=\s*)(?!\d+\s*$)(?!\[REDACTED\])\S+/gm;
 const LONG_TOKEN = /\b[A-Za-z0-9+/_-]{32,}={0,2}/g;
 const ENTROPY_THRESHOLD = 4.2;
+const MIN_DIGIT_RATIO = 0.1;
 
 const SENSITIVE_PATH = /(^|\/)(\.env(\.(?!example$|sample$|template$)[^/]*)?|[^/]+\.(pem|key|p12|pfx|jks)|id_(rsa|dsa|ecdsa|ed25519)|credentials(\.json)?|\.npmrc|\.netrc)$/i;
 
@@ -34,6 +35,11 @@ function entropy(value: string): number {
     total -= p * Math.log2(p);
   }
   return total;
+}
+
+function looksRandom(token: string): boolean {
+  const digits = token.replace(/\D/g, "").length;
+  return /[a-z]/.test(token) && /[A-Z]/.test(token) && digits / token.length >= MIN_DIGIT_RATIO && entropy(token) > ENTROPY_THRESHOLD;
 }
 
 function dropSensitiveFileDiffs(text: string): string {
@@ -55,8 +61,7 @@ export function redactSecrets(text: string): string {
     .replace(QUOTED_SECRET, `$1$2${REDACTED}$2`)
     .replace(ASSIGNED_SECRET, `$1${REDACTED}`)
     .replace(ENV_LINE_SECRET, `$1${REDACTED}`)
-    .replace(LONG_TOKEN, (token) =>
-      /[a-z]/.test(token) && /[A-Z]/.test(token) && /\d/.test(token) && entropy(token) > ENTROPY_THRESHOLD ? REDACTED : token);
+    .replace(LONG_TOKEN, (token) => (looksRandom(token) ? REDACTED : token));
 }
 
 export function redactPayload<T>(value: T): T {

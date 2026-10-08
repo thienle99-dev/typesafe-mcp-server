@@ -31,6 +31,15 @@ describe("redactSecrets", () => {
     expect(redactSecrets(code)).toBe(code);
   });
 
+  it("keeps long import paths, identifiers and lock URLs", () => {
+    const code = [
+      "import { UserProfileAvatar2 } from '../../components/UserProfile2/Avatar-Image-Large/index';",
+      "const veryLongFunctionNameForCalculatingTotalPrice2024 = 1;",
+      '"resolved": "https://registry.npmjs.org/@types/node/-/node-22.15.0.tgz",',
+    ].join("\n");
+    expect(redactSecrets(code)).toBe(code);
+  });
+
   it("drops diffs of sensitive files but keeps others and .env.example", () => {
     const diff = [
       "diff --git a/.env b/.env", "+FOO=bar",
