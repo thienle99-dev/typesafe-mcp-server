@@ -2,7 +2,9 @@ import { z } from "zod";
 
 const confidence = z.number().min(0).max(1);
 
-const MAX_DIFF_CHARS = 200_000;
+// TypeSafe rejects requests above its token limit; ~100k chars of code was the largest size verified to pass.
+export const MAX_PAYLOAD_CHARS = 100_000;
+const MAX_DIFF_CHARS = MAX_PAYLOAD_CHARS;
 const MAX_TEXT_CHARS = 50_000;
 const MAX_LIST_ITEMS = 500;
 

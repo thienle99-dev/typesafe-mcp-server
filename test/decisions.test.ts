@@ -16,6 +16,8 @@ describe("merge_gate", () => {
       checks: { tests: "fail", lint: "pass" },
     });
     expect(result).toMatchObject({ decision: "block", confidence: 1, needsHumanReview: false });
+    expect(result.reasons).toEqual(["Blocked by failing check(s): tests."]);
+    expect(result.reasons?.join(" ")).not.toMatch(/Jev selected/i);
     expect(decide).not.toHaveBeenCalled();
   });
 
@@ -89,6 +91,8 @@ describe("command_safety hard rules", () => {
     const { provider, decide } = providerReturning({ confidence: 0.99, safety: "safe" });
     const result = await createDecisionHandlers(provider, policy).command_safety({ command });
     expect(result).toMatchObject({ safety: "deny", confidence: 1, needsHumanReview: false });
+    expect(result.reasons?.[0]).toMatch(/^Denied by rule: /);
+    expect(result.reasons?.join(" ")).not.toMatch(/Jev selected/i);
     expect(decide).not.toHaveBeenCalled();
   });
 
@@ -141,5 +145,23 @@ describe("classify_change security review", () => {
     const { provider } = providerReturning({ confidence: 0.99, changeType: "safe_refactor" });
     const result = await createDecisionHandlers(provider, policy).classify_change({ diff: "d", changedFiles: ["a.ts"] });
     expect(result).toMatchObject({ needsHumanReview: false });
+  });
+});
+
+describe("payload size limit", () => {
+  it("rejects a payload whose fields together exceed the limit, without calling the provider", async () => {
+    const { provider, decide } = providerReturning({ confidence: 1 });
+    await expect(createDecisionHandlers(provider, policy).review_risk({
+      diff: "x".repeat(60_000),
+      changedFiles: ["a.ts"],
+      testResults: "y".repeat(50_000),
+    })).rejects.toThrow("Input is too large");
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it("accepts a payload at the limit", async () => {
+    const { provider, decide } = providerReturning({ confidence: 1 });
+    await createDecisionHandlers(provider, policy).review_risk({ diff: "x".repeat(99_000), changedFiles: ["a.ts"] });
+    expect(decide).toHaveBeenCalledOnce();
   });
 });

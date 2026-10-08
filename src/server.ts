@@ -1,12 +1,11 @@
-import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { createDecisionHandlers } from "./decisions.js";
 import { loadJevConfig, JevHttpProvider } from "./jev.js";
-import { isAuthorized, loadHttpConfig } from "./httpAuth.js";
+import { createHttpApp } from "./httpApp.js";
+import { loadHttpConfig } from "./httpAuth.js";
 import { loadPolicy } from "./policy.js";
 import {
   assessTaskScopeInput,
@@ -25,7 +24,6 @@ import {
 const policy = loadPolicy();
 const provider = new JevHttpProvider(loadJevConfig());
 const handlers = createDecisionHandlers(provider, policy);
-const transports = new Map<string, SSEServerTransport>();
 
 function createMcpServer() {
   const server = new McpServer({ name: "typesafe-mcp-server", version: "0.1.0" });
@@ -78,36 +76,7 @@ function errorMessage(error: unknown): string {
 }
 
 const httpConfig = process.env.MCP_TRANSPORT === "stdio" ? { host: "127.0.0.1" } : loadHttpConfig();
-
-const app = express();
-app.use(express.json({ limit: "2mb" }));
-app.get("/health", (_req, res) => res.json({ status: "ok", service: "typesafe-mcp-server" }));
-
-const requireAuth: express.RequestHandler = (req, res, next) => {
-  if (isAuthorized(req.headers.authorization, httpConfig.authToken)) {
-    next();
-    return;
-  }
-  res.status(401).json({ error: "Unauthorized" });
-};
-
-app.get("/sse", requireAuth, async (_req, res) => {
-  const transport = new SSEServerTransport("/messages", res);
-  transports.set(transport.sessionId, transport);
-  res.on("close", () => transports.delete(transport.sessionId));
-  await createMcpServer().connect(transport);
-});
-
-app.post("/messages", requireAuth, async (req, res) => {
-  const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : undefined;
-  const transport = sessionId ? transports.get(sessionId) : undefined;
-  if (!transport) {
-    res.status(400).json({ error: "Unknown or missing sessionId" });
-    return;
-  }
-  await transport.handlePostMessage(req, res, req.body);
-});
-
+const app = createHttpApp(httpConfig, createMcpServer);
 const port = Number(process.env.PORT ?? "3000");
 
 if (process.env.MCP_TRANSPORT === "stdio") {

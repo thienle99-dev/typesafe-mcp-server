@@ -149,6 +149,34 @@ describe("JevHttpProvider", () => {
     })).resolves.toMatchObject({ testGroups: ["unit", "e2e"], confidence: 1 });
   });
 
+  it("bases select_tests confidence only on skipped groups", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      model: "jev-1.13.0",
+      answers: {
+        unit: { type: "noul", noul: 0.95 },
+        integration: { type: "noul", noul: 0.2 },
+      },
+    }))));
+    const provider = new JevHttpProvider({
+      baseUrl: "https://jev.test",
+      apiKey: "test-key",
+      model: "jev",
+      timeoutMs: 1000,
+      maxRetries: 0,
+    });
+    const result = await provider.decide({
+      tool: "select_tests",
+      payload: { changedFiles: ["a.ts"], availableTests: ["unit", "integration"] },
+    });
+    expect(result).toMatchObject({
+      testGroups: ["unit"],
+      confidence: 0.8,
+    });
+    expect(result.confidence).not.toBe(0.2);
+    expect(result.confidence).not.toBe(0.95);
+    expect(result.reasons).toEqual(["Selected 1 of 2 test group(s): unit."]);
+  });
+
   it("rejects a select_tests response without noul answers", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ model: "jev-1.13.0", answers: "invalid" }))));
     const provider = new JevHttpProvider({
@@ -205,13 +233,14 @@ describe("JevHttpProvider", () => {
       const result = await new JevHttpProvider(config).decide({ tool: "classify_change", payload: {} });
       expect(result).toMatchObject({ changeType: "behavior_change" });
       expect(result).not.toHaveProperty("labels");
+      expectConcreteReasons(result.reasons);
     });
 
     it("uses a higher threshold for behavior_change than for security and migration", async () => {
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
         model: "jev-1.13.0",
         answers: {
-          decision: { ...decision, choice: "migration" },
+          decision: { ...decision, choice: "migration", probabilities: { safe_refactor: 0.01, behavior_change: 0.05, security_sensitive: 0.02, migration: 0.9, unknown: 0.02 } },
           label_behavior_change: { type: "noul", noul: 0.49 },
           label_security_sensitive: { type: "noul", noul: 0.29 },
           label_migration: { type: "noul", noul: 0.3 },
@@ -219,6 +248,67 @@ describe("JevHttpProvider", () => {
       }))));
       const result = await new JevHttpProvider(config).decide({ tool: "classify_change", payload: {} });
       expect(result).toMatchObject({ labels: ["migration"] });
+      expect(result.labels).not.toContain("behavior_change");
+      expect(result.labels).not.toContain("security_sensitive");
+      expectConcreteReasons(result.reasons);
+    });
+
+    it("includes security and migration at 0.3 and behavior_change at 0.5", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        model: "jev-1.13.0",
+        answers: {
+          decision: { ...decision, choice: "safe_refactor", confidence: 0.99, probabilities: { safe_refactor: 0.99, behavior_change: 0.01, security_sensitive: 0, migration: 0, unknown: 0 } },
+          label_behavior_change: { type: "noul", noul: 0.5 },
+          label_security_sensitive: { type: "noul", noul: 0.3 },
+          label_migration: { type: "noul", noul: 0.3 },
+        },
+      }))));
+      const result = await new JevHttpProvider(config).decide({ tool: "classify_change", payload: {} });
+      expect(result.changeType).toBe("safe_refactor");
+      expect(result.labels).toEqual(["behavior_change", "security_sensitive", "migration"]);
+      expect(result.labels).not.toContain("safe_refactor");
+    });
+
+    it("keeps changeType when that label stays under its threshold", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        model: "jev-1.13.0",
+        answers: {
+          decision,
+          label_behavior_change: { type: "noul", noul: 0.2 },
+          label_security_sensitive: { type: "noul", noul: 0.41 },
+          label_migration: { type: "noul", noul: 0.04 },
+        },
+      }))));
+      const result = await new JevHttpProvider(config).decide({ tool: "classify_change", payload: {} });
+      expect(result.changeType).toBe("behavior_change");
+      expect(result.labels).toEqual(["security_sensitive"]);
+      expect(result.labels).not.toContain("behavior_change");
     });
   });
+
+  it("turns max_tokens_exceeded into a readable error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ detail: { error_type: "max_tokens_exceeded" } }), { status: 400 })));
+    const provider = new JevHttpProvider({ baseUrl: "https://jev.test", apiKey: "test-key", model: "jev", timeoutMs: 1000, maxRetries: 0 });
+    await expect(provider.decide({ tool: "review_risk", payload: {} })).rejects.toThrow("Input is too large for TypeSafe");
+  });
 });
+
+const REASON_PATTERNS = [
+  /^Selected '[^']+'\.$/,
+  /^Selected '[^']+' \(\d+%\); runner-up '[^']+' \(\d+%\), margin -?\d+%\.$/,
+  /^Score /,
+  /^Probability \d+% that the answer is yes\.$/,
+  /^Selected \d+ of \d+ test group\(s\): /,
+  /^Borderline groups \(30-70%\) included conservatively: /,
+  /^Also flagged: /,
+];
+
+function expectConcreteReasons(reasons: unknown) {
+  expect(Array.isArray(reasons)).toBe(true);
+  expect(reasons).not.toHaveLength(0);
+  for (const reason of reasons as string[]) {
+    expect(reason).not.toMatch(/Jev selected/i);
+    expect(REASON_PATTERNS.some((pattern) => pattern.test(reason))).toBe(true);
+  }
+}

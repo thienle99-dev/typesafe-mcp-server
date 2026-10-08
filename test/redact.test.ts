@@ -74,7 +74,7 @@ describe("handlers", () => {
 
 describe("input limits", () => {
   it("rejects an oversized diff", () => {
-    expect(classifyChangeInput.safeParse({ diff: "x".repeat(200_001), changedFiles: ["a.ts"] }).success).toBe(false);
+    expect(classifyChangeInput.safeParse({ diff: "x".repeat(100_001), changedFiles: ["a.ts"] }).success).toBe(false);
   });
 
   it("rejects an oversized merge_gate record but accepts a small one", () => {

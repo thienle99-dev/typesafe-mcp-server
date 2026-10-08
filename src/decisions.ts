@@ -8,6 +8,7 @@ import {
   classifyChangeInput,
   commandSafetyInput,
   dependencyActionInput,
+  MAX_PAYLOAD_CHARS,
   mergeGateInput,
   reviewRiskInput,
   routeTaskInput,
@@ -32,8 +33,26 @@ export function createDecisionHandlers(provider: DecisionProvider, policy: Polic
   };
 }
 
+function prepare(payload: unknown): unknown {
+  const redacted = redactPayload(payload);
+  const size = textLength(redacted);
+  if (size > MAX_PAYLOAD_CHARS) {
+    throw new Error(`Input is too large (${size} characters, limit ${MAX_PAYLOAD_CHARS}); send a smaller diff or fewer files.`);
+  }
+  return redacted;
+}
+
+function textLength(value: unknown): number {
+  if (typeof value === "string") return value.length;
+  if (Array.isArray(value)) return value.reduce((sum: number, item) => sum + textLength(item), 0);
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).reduce((sum: number, item) => sum + textLength(item), 0);
+  }
+  return 0;
+}
+
 async function run(tool: DecisionTool, payload: unknown, provider: DecisionProvider, policy: PolicyConfig) {
-  return applyPolicy(await provider.decide({ tool, payload: redactPayload(payload) }), policy);
+  return applyPolicy(await provider.decide({ tool, payload: prepare(payload) }), policy);
 }
 
 async function mergeGate(
@@ -73,7 +92,7 @@ async function classifyChange(
   provider: DecisionProvider,
   policy: PolicyConfig,
 ): Promise<DecisionEnvelope> {
-  const decision = await provider.decide({ tool: "classify_change", payload: redactPayload(input) });
+  const decision = await provider.decide({ tool: "classify_change", payload: prepare(input) });
   const securityFlagged = Array.isArray(decision.labels) && decision.labels.includes("security_sensitive");
   if (!securityFlagged) return applyPolicy(decision, policy);
   return applyPolicy({

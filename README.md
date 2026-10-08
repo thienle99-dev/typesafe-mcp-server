@@ -103,10 +103,10 @@ Một change có thể thuộc nhiều loại cùng lúc, nên ngoài `changeTyp
 }
 ```
 
-- `labels`: các loại có xác suất `>= 0.3` trong `behavior_change`, `security_sensitive`, `migration`. Ngưỡng thấp có chủ ý vì bỏ sót cờ bảo mật hoặc migration tốn kém hơn gắn thừa. Danh sách rỗng nghĩa là không có cờ nào (thường đi với `safe_refactor`).
+- `labels`: các loại được gắn khi xác suất đạt ngưỡng riêng: `security_sensitive` và `migration` từ `0.3` (bỏ sót tốn kém hơn gắn thừa), `behavior_change` từ `0.5` (gắn thừa chỉ gây nhiễu). Danh sách rỗng nghĩa là không có cờ nào (thường đi với `safe_refactor`).
 - `labelProbabilities`: xác suất của từng label (mỗi label là một câu hỏi `noul` riêng, gửi cùng request với câu hỏi `choice`).
 - Khi có label ngoài `changeType`, `reasons` có thêm dòng `Also flagged: ...`.
-- Agent nên đọc `labels` chứ không chỉ `changeType`: nhãn chính có thể là `behavior_change` trong khi `labels` vẫn chứa `security_sensitive`. `confidence` vẫn là của nhãn chính, không tính các label.
+- Agent nên đọc `labels` chứ không chỉ `changeType`: nhãn chính có thể là `behavior_change` trong khi `labels` vẫn chứa `security_sensitive`. `confidence` vẫn là của nhãn chính, không tính các label; vì vậy nếu `labels` chứa `security_sensitive`, server luôn đặt `needsHumanReview: true` và thêm một dòng vào `reasons`.
 - Nếu API không trả các câu trả lời label, `labels` và `labelProbabilities` bị bỏ qua và `changeType` vẫn hoạt động như trước.
 
 ### 2. `route_task`
@@ -487,5 +487,5 @@ Test mặc định mock TypeSafe response, không cần API key production. Serv
 - Decision không phải authorization cuối cùng cho merge, dependency install hoặc production deploy.
 - Không gửi API key trong MCP payload; cấu hình key bằng environment variable.
 - Trước khi gửi sang TypeSafe, server che secret trong mọi string của payload bằng `[REDACTED]`: private key, AWS/GitHub/Slack/Stripe/Google/npm token, key `sk-`, JWT, `Bearer ...`, URL kèm `user:password@`, giá trị trong dấu nháy gán cho `password`/`secret`/`token`/`api_key` (mọi độ dài), dòng kiểu `.env` (`DB_PASSWORD=...`) và chuỗi base64 dài có entropy cao. Diff của file nhạy cảm (`.env`, `*.pem`, `*.key`, `id_rsa`, `credentials`, `.npmrc`; trừ `.env.example`) bị bỏ toàn bộ nội dung. Đây là lớp giảm thiểu theo pattern, không đảm bảo bắt hết: secret ngắn không dấu nháy, không đặt tên rõ (ví dụ `x = abc123`) hoặc ở định dạng lạ vẫn có thể lọt. Đừng đưa secret vào diff hay log gửi cho tool.
-- Giới hạn input: `diff` tối đa 200.000 ký tự, các string khác tối đa 50.000 ký tự, mỗi danh sách tối đa 500 phần tử, và `changeClassification`/`riskReview`/`routeDecision` của `merge_gate` tối đa 50.000 ký tự sau khi serialize JSON. Input vượt giới hạn bị từ chối, không bị cắt.
+- Giới hạn input: `diff` tối đa 100.000 ký tự, các string khác tối đa 50.000 ký tự, mỗi danh sách tối đa 500 phần tử, tổng độ dài mọi string trong một request tối đa 100.000 ký tự (TypeSafe trả `400 max_tokens_exceeded` với request lớn hơn khoảng 30.000 token; 100.000 ký tự code đã được kiểm chứng là qua được, 150.000 thì không), và `changeClassification`/`riskReview`/`routeDecision` của `merge_gate` tối đa 50.000 ký tự sau khi serialize JSON. Input vượt giới hạn bị từ chối, không bị cắt.
 - Lỗi từ tool (input sai, TypeSafe timeout hoặc 5xx) trả về `isError: true` kèm message ngắn.

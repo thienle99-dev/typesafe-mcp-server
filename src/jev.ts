@@ -82,9 +82,15 @@ export class JevHttpProvider implements DecisionProvider {
     payload: unknown;
   }): Promise<T> {
     const request = toTypeSafeRequest(input.tool, input.payload, this.client.defaultModel);
-    const response = await this.client.systemOne(request as any) as unknown as {
-      answers: Record<string, TypeSafeAnswer>;
-    };
+    let response: { answers: Record<string, TypeSafeAnswer> };
+    try {
+      response = await this.client.systemOne(request as any) as unknown as typeof response;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("max_tokens_exceeded")) {
+        throw new Error("Input is too large for TypeSafe (max_tokens_exceeded); send a smaller diff or fewer files.");
+      }
+      throw error;
+    }
     return fromTypeSafeResponse(input.tool, response) as T;
   }
 }
