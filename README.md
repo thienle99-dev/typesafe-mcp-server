@@ -290,21 +290,67 @@ HTTP/SSE endpoints:
 - `GET /sse`: mở MCP SSE session.
 - `POST /messages?sessionId=...`: gửi MCP messages cho session.
 
-Codex local integration dùng stdio. Chạy thủ công bằng:
+Codex, Cursor và Claude Code đều dùng stdio. Chạy các lệnh dưới đây từ thư mục repo sau `npm run build`. `SERVER` là đường dẫn checkout; client không expand biến này trong file JSON, nên Cursor cần đường dẫn tuyệt đối.
 
 ```bash
-MCP_TRANSPORT=stdio npm start
+SERVER="$(pwd)"
 ```
 
-Đăng ký vào Codex CLI:
+API key đọc từ `.env` qua `--env-file`. Không ghi key vào `config.toml`, `mcp.json`, hoặc command line.
+
+### Codex
+
+`codex mcp add` ghi vào `~/.codex/config.toml` và áp dụng cho mọi project:
 
 ```bash
-codex mcp add typesafe-code \\
-  --env MCP_TRANSPORT=stdio \\
-  -- node --env-file=/root/documents/mcp/typesafe-mcp-server/.env /root/documents/mcp/typesafe-mcp-server/dist/src/server.js
+codex mcp add typesafe-code \
+  --env MCP_TRANSPORT=stdio \
+  -- node --env-file="$SERVER/.env" "$SERVER/dist/src/server.js"
 ```
 
-Codex sẽ khởi động process này tự động. Process cần nhìn thấy `TYPESAFE_API_KEY` trong environment của Codex; không ghi API key trực tiếp vào `config.toml` hoặc command line.
+### Cursor
+
+Thêm server vào `~/.cursor/mcp.json` để dùng ở mọi workspace. Thay `/path/to/typesafe-mcp-server` bằng giá trị của `$SERVER`:
+
+```json
+{
+  "mcpServers": {
+    "typesafe-code": {
+      "command": "node",
+      "args": [
+        "--env-file=/path/to/typesafe-mcp-server/.env",
+        "/path/to/typesafe-mcp-server/dist/src/server.js"
+      ],
+      "env": {
+        "MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}
+```
+
+Sau khi sửa file, bật lại `typesafe-code` trong Cursor Settings → MCP.
+
+### Claude Code
+
+`--scope user` ghi vào cấu hình user và áp dụng cho mọi project:
+
+```bash
+claude mcp add --scope user \
+  -e MCP_TRANSPORT=stdio \
+  typesafe-code -- \
+  node --env-file="$SERVER/.env" "$SERVER/dist/src/server.js"
+```
+
+### Quy tắc agent
+
+Thêm cùng một rule vào file instruction global của client: `~/.codex/AGENTS.md`, Cursor User Rules, hoặc `~/.claude/CLAUDE.md`.
+
+Agent gọi `typesafe-code` cho decision lặp lại (`classify_change`, `route_task`, `review_risk`, `select_tests`, `triage_error`, `dependency_action`, `merge_gate`) và tự làm theo kết quả khi `confidence >= 0.70`:
+
+- Từ `0.70`: tiếp tục với `pass` hoặc `allow`; `pin` chỉ khi version được siết chặt; dừng nếu decision là `block`, `reject`, hoặc `manual_review`.
+- Dưới `0.70`: dừng và hỏi người dùng.
+- Không dùng cờ `needsHumanReview` cho ngưỡng này. Cờ đó vẫn theo `DECISION_CONFIDENCE_THRESHOLD` (mặc định `0.97`).
 
 ## Development
 
