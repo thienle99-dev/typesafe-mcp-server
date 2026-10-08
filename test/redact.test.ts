@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDecisionHandlers } from "../src/decisions.js";
 import { redactPayload, redactSecrets } from "../src/redact.js";
-import { classifyChangeInput } from "../src/schemas.js";
+import { classifyChangeInput, mergeGateInput } from "../src/schemas.js";
 import type { DecisionProvider } from "../src/types.js";
 
 describe("redactSecrets", () => {
@@ -66,5 +66,10 @@ describe("handlers", () => {
 describe("input limits", () => {
   it("rejects an oversized diff", () => {
     expect(classifyChangeInput.safeParse({ diff: "x".repeat(200_001), changedFiles: ["a.ts"] }).success).toBe(false);
+  });
+
+  it("rejects an oversized merge_gate record but accepts a small one", () => {
+    expect(mergeGateInput.safeParse({ riskReview: { riskLevel: "low" } }).success).toBe(true);
+    expect(mergeGateInput.safeParse({ riskReview: { note: "x".repeat(50_001) } }).success).toBe(false);
   });
 });

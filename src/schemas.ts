@@ -8,6 +8,10 @@ const MAX_LIST_ITEMS = 500;
 
 const diffText = z.string().min(1).max(MAX_DIFF_CHARS);
 const text = z.string().max(MAX_TEXT_CHARS);
+const boundedRecord = z.record(z.unknown()).refine(
+  (value) => JSON.stringify(value).length <= MAX_TEXT_CHARS,
+  { message: `must serialize to at most ${MAX_TEXT_CHARS} characters` },
+);
 const fileList = z.array(z.string().max(1_000)).max(MAX_LIST_ITEMS);
 
 export const classifyChangeInput = z.object({
@@ -60,9 +64,9 @@ export const mergeGateInput = z.object({
     lint: checkStatus.optional(),
     security: checkStatus.optional(),
   }).optional(),
-  changeClassification: z.record(z.unknown()).optional(),
-  riskReview: z.record(z.unknown()).optional(),
-  routeDecision: z.record(z.unknown()).optional(),
+  changeClassification: boundedRecord.optional(),
+  riskReview: boundedRecord.optional(),
+  routeDecision: boundedRecord.optional(),
   testResults: text.optional(),
   lintResults: text.optional(),
   securityResults: text.optional(),
